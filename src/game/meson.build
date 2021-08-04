@@ -2,7 +2,8 @@ src = [
   'src/game.c'
   ]
 
-lib_game = shared_library('libgame', src)
+lib_game = shared_library('libgame', src,
+                          include_directories: shared_dir)
 
 custom_target('copy to run',
               depends: lib_game,

@@ -2,7 +2,8 @@ src = [
   'src/renderer.c'
   ]
 
-lib_renderer = shared_library('librenderer', src)
+lib_renderer = shared_library('librenderer', src,
+                              include_directories: shared_dir)
 
 custom_target('copy to run',
               depends: lib_renderer,
