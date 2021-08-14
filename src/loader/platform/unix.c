@@ -2,6 +2,7 @@
 
 /* libc */
 #include <stdio.h>
+#include <stdlib.h>
 
 /* unix */
 #include <dlfcn.h>
@@ -37,12 +38,14 @@ void platform_log(enum log_type type, const char *fmt, ...) {
     va_start(args, fmt);
     vfprintf(fd, fmt, args);
     va_end(args);
+
+    fputc('\n', fd);
 }
 
 void *platform_dlopen(const char *path) {
     void *handle = dlopen(path, RTLD_NOW);
     if (!handle) {
-        platform_log(LOG_ERROR, "Failed to dlopen() for path %s\n!", path);
+        platform_log(LOG_ERROR, "Failed to dlopen() with error %s!", dlerror());
         return NULL;
     }
     return handle;
@@ -51,7 +54,7 @@ void *platform_dlopen(const char *path) {
 void platform_dlsym(void **var, void *handle, const char *sym) {
     *var = dlsym(handle, sym);
     if (!*var) {
-        platform_log(LOG_ERROR, "Failed to dlopen() for sym %s\n!", sym);
+        platform_log(LOG_ERROR, "Failed to dlopen() for sym %s!", sym);
     }
 }
 
@@ -65,4 +68,18 @@ u64 platform_last_file_modify(const char *path) {
         return (u64) file_info.st_mtim.tv_sec;
     }
     return 0;
+}
+
+void *platform_allocate_memory(u64 size) {
+    void *mem = malloc(size);
+    if (!mem) {
+        platform_log(LOG_ERROR, "Failed to allocate memory of size %lu!", size);
+        return NULL;
+    }
+
+    return mem;
+}
+
+void platform_free_memory(void *mem) {
+    free(mem);
 }

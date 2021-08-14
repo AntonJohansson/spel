@@ -13,6 +13,10 @@
 /* posix */
 #include <unistd.h>
 
+/*
+ * Frame input
+ */
+
 static struct frame_input global_frame_input = {0};
 
 static enum input_type global_key_map[GLFW_KEY_LAST] = {
@@ -26,6 +30,10 @@ static void clear_input(struct frame_input *input) {
 }
 
 #include "glfw_input.c"
+
+/*
+ * Code modules
+ */
 
 struct code_module {
     const char *path;
@@ -41,7 +49,7 @@ struct code_module {
 static inline void load_code_module(struct code_module *module) {
     module->handle = platform_dlopen(module->path);
     if (!module->handle) {
-        platform_log(LOG_ERROR, "Failed to load module %s!\n", module->path);
+        platform_log(LOG_ERROR, "Failed to load module %s!", module->path);
         return;
     }
 
@@ -58,12 +66,16 @@ static inline void reload_module_if_needed(struct code_module *module) {
     u64 new_modify_time = platform_last_file_modify(module->path);
     if (new_modify_time > module->last_modify_time) {
         sleep(1);
-        platform_log(LOG_INFO, "Reloading module %s\n", module->path);
+        platform_log(LOG_INFO, "Reloading module %s", module->path);
         module->last_modify_time = new_modify_time;
         unload_code_module(module);
         load_code_module(module);
     }
 }
+
+/*
+ *
+ */
 
 int main(int argc, char **argv) {
     (void)argc;
@@ -110,6 +122,8 @@ int main(int argc, char **argv) {
 
     struct platform_function_table platform_functions = {
         .log = platform_log,
+        .allocate_memory = platform_allocate_memory,
+        .free_memory = platform_free_memory,
     };
 
     struct game_memory memory = {
@@ -122,13 +136,18 @@ int main(int argc, char **argv) {
     };
 
     glfwInit();
-    //glfwWindowHint(GLFW_RESIZABLE, false);
-    GLFWwindow *window = glfwCreateWindow(800, 600, "spel", 0, 0);
-    glfwMakeContextCurrent(window);
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, false);
+    renderer.window = glfwCreateWindow(800, 600, "spel", 0, 0);
+    glfwMakeContextCurrent(renderer.window);
 
-    set_glfw_input_callbacks(window);
+    set_glfw_input_callbacks(renderer.window);
 
-    while (!glfwWindowShouldClose(window)) {
+    if (renderer_functions.startup) {
+        renderer_functions.startup(&renderer);
+    }
+
+    while (!glfwWindowShouldClose(renderer.window)) {
         clear_input(&global_frame_input);
         glfwPollEvents();
 
@@ -141,13 +160,17 @@ int main(int argc, char **argv) {
         if (renderer_functions.end_frame) {
             renderer_functions.end_frame(&renderer, frame);
         }
-        glfwSwapBuffers(window);
+        glfwSwapBuffers(renderer.window);
 
         reload_module_if_needed(&game_module);
         reload_module_if_needed(&renderer_module);
     }
 
-    glfwDestroyWindow(window);
+    if (renderer_functions.shutdown) {
+        renderer_functions.shutdown(&renderer);
+    }
+
+    glfwDestroyWindow(renderer.window);
     glfwTerminate();
 
     unload_code_module(&game_module);
