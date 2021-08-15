@@ -16,6 +16,27 @@ struct vkc_context {
     VkInstance instance;
     VkSurfaceKHR surface;
 
+    /* Physical device */
+
+    VkPhysicalDevice device;
+
+    u32 format_count;
+    u32 present_mode_count;
+    VkSurfaceCapabilitiesKHR capabilities;
+    VkSurfaceFormatKHR *formats;
+    VkPresentModeKHR *present_modes;
+
+    i32 graphics_family;
+    i32 present_family;
+
+    /* Logical device */
+
+    VkDevice device;
+    VkQueue graphics_queue;
+    VkQueue present_queue;
+
+    /* Swap chain */
+
     VkFormat swapchain_image_format;
     VkExtent2D swapchain_extent;
     VkSwapchainKHR swapchain;

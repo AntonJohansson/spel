@@ -45,11 +45,11 @@ struct render_entry_quad {
 struct GLFWwindow;
 typedef struct GLFWwindow GLFWwindow;
 
-struct render_context;
+struct vkc_context;
 
 struct renderer {
     GLFWwindow *window;
-    struct render_context *context;
+    struct vkc_context *context;
     struct platform_function_table platform;
     struct render_commands cmds;
     u8 memory[RENDERER_MEMORY_SIZE];

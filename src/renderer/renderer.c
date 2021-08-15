@@ -12,7 +12,7 @@ struct platform_function_table platform;
 
 #include "vkc/vkc.c"
 
-struct render_context *context;
+struct vkc_context *context;
 
 static inline void setup_globals(struct renderer *r) {
     platform = r->platform;
@@ -20,8 +20,8 @@ static inline void setup_globals(struct renderer *r) {
 }
 
 void startup(struct renderer *r) {
-    r->context = r->platform.allocate_memory(sizeof(struct render_context));
-    memset(r->context, 0, sizeof(struct render_context));
+    r->context = r->platform.allocate_memory(sizeof(struct vkc_context));
+    memset(r->context, 0, sizeof(struct vkc_context));
     setup_globals(r);
 
     /* Extensions */

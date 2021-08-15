@@ -1,105 +1,79 @@
-
-struct vkc_physical_device {
-    VkPhysicalDevice device;
-
-    u32 format_count;
-    u32 present_mode_count;
-    VkSurfaceCapabilitiesKHR capabilities;
-    VkSurfaceFormatKHR *formats;
-    VkPresentModeKHR *present_modes;
-
-    i32 graphics_family;
-    i32 present_family;
+struct physical_device_info {
 };
 
-struct vkc_logical_device {
-    VkDevice device;
-    VkQueue graphics_queue;
-    VkQueue present_queue;
-};
+/* glfwGetPhysicalDevicePresentationSupport? */
+static void populate_physical_device_info(VkPhysicalDevice device, VkSurfaceKHR surface) {
+    /* Swap chain details */
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &device->capabilities);
 
-// glfwGetPhysicalDevicePresentationSupport
-static void populate_physical_device_info(struct vkc_context *context, struct vkc_physical_device *device) {
-    // Swap chain details
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device->device, context->surface, &device->capabilities);
-
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device->device, context->surface, &device->format_count, NULL);
-    if(device->format_count > 0) {
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &device->format_count, NULL);
+    if (device->format_count > 0) {
         device->formats = malloc(device->format_count * sizeof(VkSurfaceFormatKHR));
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device->device, context->surface, &device->format_count, device->formats);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device, context->surface, &device->format_count, device->formats);
     }
 
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device->device, context->surface, &device->present_mode_count, NULL);
-    if(device->present_mode_count > 0) {
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device, context->surface, &device->present_mode_count, NULL);
+    if (device->present_mode_count > 0) {
         device->present_modes = malloc(device->present_mode_count * sizeof(VkPresentModeKHR));
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device->device, context->surface, &device->present_mode_count, device->present_modes);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &device->present_mode_count, device->present_modes);
     }
 
-    // Queue families
-    uint32_t queue_family_count = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device->device, &queue_family_count, NULL);
+    /* Queue families */
+    u32 queue_family_count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, NULL);
 
     VkQueueFamilyProperties queue_families[queue_family_count];
-    vkGetPhysicalDeviceQueueFamilyProperties(device->device, &queue_family_count, queue_families);
-    for(uint32_t i = 0; i < queue_family_count; i++) {
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families);
+    for (u32 i = 0; i < queue_family_count; ++i) {
         VkQueueFamilyProperties qf = queue_families[i];
 
-        if(qf.queueCount > 0 && qf.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+        if (qf.queueCount > 0 && qf.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             device->graphics_family = i;
         }
 
         VkBool32 present_support = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device->device, i, context->surface, &present_support);
-        if(qf.queueCount > 0 && present_support) {
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &present_support);
+        if (qf.queueCount > 0 && present_support) {
             device->present_family = i;
         }
 
-        if(device->graphics_family >= 0 && device->present_family >= 0) {
+        if (device->graphics_family >= 0 && device->present_family >= 0) {
             break;
         }
     }
 }
 
-static void free_physical_device_info(struct vkc_physical_device *device) {
-    free(device->formats);
-    free(device->present_modes);
-    device->format_count = 0;
-    device->present_mode_count = 0;
-    device->graphics_family = -1;
-    device->present_family = -1;
-}
-
-static bool is_physical_device_suitable(struct vkc_context *context, struct vkc_physical_device *device) {
+static bool is_physical_device_suitable(VkPhysicalDevice device) {
     VkPhysicalDeviceProperties device_properties;
     VkPhysicalDeviceFeatures device_features;
-    vkGetPhysicalDeviceProperties(device->device, &device_properties);
-    vkGetPhysicalDeviceFeatures(device->device, &device_features);
+    vkGetPhysicalDeviceProperties(device, &device_properties);
+    vkGetPhysicalDeviceFeatures(device, &device_features);
 
-    log_info("Vulkan: checking device extension support");
-    uint32_t vk_extension_count = 0;
-    vkEnumerateDeviceExtensionProperties(device->device, NULL, &vk_extension_count, NULL);
-    VkExtensionProperties available_extensions[vk_extension_count];
-    vkEnumerateDeviceExtensionProperties(device->device, NULL, &vk_extension_count, available_extensions);
+    VKC_LOG_INFO("Vulkan: checking device extension support");
+    u32 vk_extension_count = 0;
+    vkEnumerateDeviceExtensionProperties(device, NULL, &vk_extension_count, NULL);
+    VkExtensionProperties vk_available_extensions[vk_extension_count];
+    vkEnumerateDeviceExtensionProperties(device, NULL, &vk_extension_count, vk_available_extensions);
 
     bool device_extensions_supported = true;
     {
         bool found = false;
-        for(uint32_t i = 0; i < vk_extension_count; i++) {
-            if(strcmp(available_extensions[i].extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+        for (u32 i = 0; i < vk_extension_count; ++i) {
+            if(strcmp(vk_available_extensions[i].extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
                 found = true;
                 break;
             }
         }
 
-        log_info("  %-38s%-20s(%s)", VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-                 (found) ? "\033[0;32m[found]\033[0m" : "\033[0;31m[missing]\033[0m", "device");
+        VKC_LOG_INFO("  %-38s%-20s", VK_KHR_SWAPCHAIN_EXTENSION_NAME, (found) ? "\033[0;32m[found]\033[0m" : "\033[0;31m[missing]\033[0m");
 
-        if(!found)
+        if (!found) {
             device_extensions_supported = false;
+        }
     }
 
     bool swap_chain_adequate = false;
-    if(device_extensions_supported) {
+    if (device_extensions_supported) {
         populate_physical_device_info(context, device);
         swap_chain_adequate = (device->formats != NULL) && (device->present_modes != NULL);
     }
@@ -111,52 +85,49 @@ static bool is_physical_device_suitable(struct vkc_context *context, struct vkc_
         device->graphics_family >= 0 &&
         device->present_family >= 0;
 
-    log_info("%-40s%-20s(%s)", device_properties.deviceName,
-             (suitable) ? "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m", "device");
-    log_info("  %-38s%-20s(%s)", "Geometry Shader",
-             (device_features.geometryShader) ? "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m", "device");
-    log_info("  %-38s%-20s(%s)", "Swap Chain Adequate",
-             (swap_chain_adequate) ? "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m", "device");
-    log_info("  %-38s%-20s(%s)", "Sampler Anisotropy",
-             (device_features.samplerAnisotropy) ? "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m", "device");
-    log_info("  %-38s%-20s(%s)", "Graphics family",
-             (device->graphics_family >= 0) ? "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m", "device");
-    log_info("  %-38s%-20s(%s)", "Present family",
-             (device->present_family >= 0) ? "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m", "device");
-
-    if(!suitable) {
-        free_physical_device_info(device);
-    }
+    VKC_LOG_INFO("%-40s%-20s",   device_properties.deviceName,
+            (suitable) ?
+            "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m");
+    VKC_LOG_INFO("  %-38s%-20s", "Geometry Shader",
+            (device_features.geometryShader) ?
+            "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m");
+    VKC_LOG_INFO("  %-38s%-20s", "Swap Chain Adequate",
+            (swap_chain_adequate) ?
+            "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m");
+    VKC_LOG_INFO("  %-38s%-20s", "Sampler Anisotropy",
+            (device_features.samplerAnisotropy) ?
+            "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m");
+    VKC_LOG_INFO("  %-38s%-20s", "Graphics family"
+            ,(device->graphics_family >= 0) ?
+            "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m");
+    VKC_LOG_INFO("  %-38s%-20s", "Present family",
+            (device->present_family >= 0) ?
+            "\033[0;32m[ok]\033[0m" : "\033[0;31m[failed]\033[0m");
 
     return suitable;
 }
 
-struct vkc_physical_device *vkc_pick_physical_device(struct vkc_context *context) {
-    struct vkc_physical_device *physical_device = malloc(sizeof(struct vkc_physical_device));
+static bool vkc_pick_physical_device(VkInstance instance, VkSurfaceKHR surface, VkPhysicalDevice *device) {
+    *device = VK_NULL_HANDLE;
+    VKC_LOG_INFO("Vulkan: checking suitable devices");
 
-    uint32_t device_count = 0;
-    vkEnumeratePhysicalDevices(context->instance, &device_count, NULL);
-    if(device_count == 0) {
-        log_error("Vulkan: failed to find phiscal devices with Vulkan support.");
-        exit(1);
-    }
-
-    VkPhysicalDevice devices[device_count];
-    vkEnumeratePhysicalDevices(context->instance, &device_count, devices);
-    log_info("Vulkan: checking suitable devices");
-    for(uint32_t i = 0; i < device_count; i++) {
-        physical_device->device = devices[i];
-        if(is_physical_device_suitable(context, physical_device)) {
+    u32 vk_available_devices_count = 0;
+    vkEnumeratePhysicalDevices(instance, &vk_available_devices_count, NULL);
+    VkPhysicalDevice vk_available_devices[vk_available_devices_count];
+    vkEnumeratePhysicalDevices(instance, &vk_available_devices_count, vk_available_devices);
+    for (u32 i = 0; i < device_count; ++i) {
+        if(is_physical_device_suitable(vk_available_devices[i])) {
+            *device = vk_available_devices[i];
             break;
         }
     }
 
-    if(physical_device->device == VK_NULL_HANDLE) {
-        log_error("Vulkan: failed to find suitable physical device.");
-        exit(1);
+    if (*device == VK_NULL_HANDLE) {
+        VKC_LOG_ERROR("Vulkan: failed to find suitable physical device.");
+        return false
     }
 
-    return physical_device;
+    return true;
 }
 
 void vkc_free_physical_device(struct vkc_physical_device *device) {
