@@ -29,6 +29,13 @@ struct render_context {
     struct vkc_logical_device logical_device;
 
     struct vkc_swapchain swapchain;
+
+    VkRenderPass renderpass;
+
+    struct vkc_pipeline pipeline;
+
+    u32 framebuffer_count;
+    VkFramebuffer *framebuffers;
 };
 
 static inline void setup_globals(struct renderer *r) {
@@ -65,12 +72,37 @@ void startup(struct renderer *r) {
     int width = 0, height = 0;
     glfwGetFramebufferSize(r->window, &width, &height);
     vkc_create_swapchain(context->surface, &context->logical_device, &swapchain_info, width, height, &context->swapchain);
+    vkc_create_swapchain_image_views(&context->logical_device, &context->swapchain);
+    context->renderpass = vkc_create_renderpass(context->logical_device.handle, &context->swapchain);
+
+    u8 *vert_code = NULL;
+    u64 vert_code_size = 0;
+    platform.read_file_to_buffer("res/vert.vert.spv", &vert_code, &vert_code_size);
+    u8 *frag_code = NULL;
+    u64 frag_code_size = 0;
+    platform.read_file_to_buffer("res/frag.frag.spv", &frag_code, &frag_code_size);
+    VkShaderModule vert_module = vkc_create_shader_module(context->logical_device.handle, vert_code, vert_code_size);
+    VkShaderModule frag_module = vkc_create_shader_module(context->logical_device.handle, frag_code, frag_code_size);
+    platform.free_memory(vert_code);
+    platform.free_memory(frag_code);
+
+    context->pipeline = vkc_create_pipeline(context->logical_device.handle, context->renderpass, &context->swapchain, vert_module, frag_module);
+
+    vkDestroyShaderModule(context->logical_device.handle, vert_module, NULL);
+    vkDestroyShaderModule(context->logical_device.handle, frag_module, NULL);
+
+    context->framebuffers = vkc_create_framebuffers(context->logical_device.handle, context->renderpass, &context->swapchain);
+    context->framebuffer_count = context->swapchain.image_view_count;
 
     platform.log(LOG_INFO, "Hello form start");
 }
 
 void shutdown(struct renderer *r) {
     setup_globals(r);
+    vkc_destroy_framebuffers(context->logical_device.handle, context->framebuffers, context->framebuffer_count);
+    vkc_destroy_pipeline(context->logical_device.handle, context->pipeline);
+    vkDestroyRenderPass(context->logical_device.handle, context->renderpass, NULL);
+    vkc_destroy_swapchain_image_views(&context->logical_device, &context->swapchain);
     vkc_destroy_swapchain(&context->logical_device, &context->swapchain);
     vkDestroyDevice(context->logical_device.handle, NULL);
     vkDestroySurfaceKHR(context->instance, context->surface, NULL);

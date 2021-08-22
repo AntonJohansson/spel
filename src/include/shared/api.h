@@ -11,11 +11,13 @@ enum log_type {
 typedef void platform_log_func(enum log_type, const char *, ...);
 typedef void *platform_allocate_memory_func(u64 size);
 typedef void platform_free_memory_func(void *mem);
+typedef void platform_read_file_to_buffer_func(const char *path, u8 **buffer, u64 *size);
 typedef void platform_abort_func();
 struct platform_function_table {
     platform_log_func *log;
     platform_allocate_memory_func *allocate_memory;
     platform_free_memory_func *free_memory;
+    platform_read_file_to_buffer_func *read_file_to_buffer;
     platform_abort_func *abort;
 };
 

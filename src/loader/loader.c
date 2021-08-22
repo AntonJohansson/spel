@@ -1,10 +1,11 @@
-#include "platform/platform.h"
-#include "third_party/sds.h"
+/* external */
+#include <GLFW/glfw3.h>
+#include "third_party/sds.c"
+
+/* shared */
 #include <shared/types.h>
 #include <shared/api.h>
 #include <shared/input.h>
-
-#include <GLFW/glfw3.h>
 
 /* libc */
 #include <stdbool.h>
@@ -12,6 +13,8 @@
 
 /* posix */
 #include <unistd.h>
+
+#include "platform/unix.c"
 
 /*
  * Frame input
@@ -81,7 +84,6 @@ int main(int argc, char **argv) {
     (void)argc;
 
     sds dir = sdsnew(argv[0]);
-
     /* Remove the executable name */
     {
         size_t i = sdslen(dir);
@@ -93,6 +95,7 @@ int main(int argc, char **argv) {
         dir[i] = 0;
     }
     sdsupdatelen(dir);
+    platform_set_file_search_dir(dir);
 
     sds game_path = sdsnew(dir);
     game_path = sdscat(game_path, "/libgame");
@@ -124,6 +127,7 @@ int main(int argc, char **argv) {
         .log = platform_log,
         .allocate_memory = platform_allocate_memory,
         .free_memory = platform_free_memory,
+        .read_file_to_buffer = platform_read_file_to_buffer,
         .abort = platform_abort,
     };
 

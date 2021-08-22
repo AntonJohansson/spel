@@ -30,7 +30,6 @@ struct vkc_context {
 
     /* Swap chain */
 
-    VkRenderPass render_pass;
     VkPipelineLayout pipeline_layout;
     VkPipeline graphics_pipeline;
 
@@ -53,3 +52,6 @@ struct vkc_context {
 #include "vkc_physical_device.c"
 #include "vkc_logical_device.c"
 #include "vkc_swapchain.c"
+#include "vkc_renderpass.c"
+#include "vkc_graphics_pipeline.c"
+#include "vkc_framebuffer.c"

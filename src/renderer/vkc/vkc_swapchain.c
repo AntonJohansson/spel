@@ -12,7 +12,7 @@ struct vkc_swapchain {
     VkExtent2D image_extent;
     u32 image_count;
     VkImage *images;
-    u32 image_views_count;
+    u32 image_view_count;
     VkImageView *image_views;
 };
 
@@ -103,7 +103,7 @@ void vkc_create_swapchain(VkSurfaceKHR surface, struct vkc_logical_device *logic
     }
 
     VK_CHECK(vkCreateSwapchainKHR(logical_device->handle, &create_info, NULL, &swapchain->handle),
-        "failed to create swapchain");
+             "failed to create swapchain");
 
     vkGetSwapchainImagesKHR(logical_device->handle, swapchain->handle, &image_count, NULL);
     swapchain->image_count = image_count;
@@ -116,37 +116,34 @@ void vkc_destroy_swapchain(struct vkc_logical_device *logical_device, struct vkc
     vkDestroySwapchainKHR(logical_device->handle, swapchain->handle, NULL);
 }
 
-#if 0
-void vkc_create_swapchain_image_views(struct vkc_context *context, struct vkc_physical_device *physical_device, struct vkc_logical_device *logical_device) {
-    context->swapchain_image_views = malloc(sizeof(VkImageView) * context->swapchain_image_count);
+void vkc_create_swapchain_image_views(struct vkc_logical_device *logical_device, struct vkc_swapchain *swapchain) {
+    swapchain->image_view_count = swapchain->image_count;
+    swapchain->image_views = VKC_MEMORY_ALLOC(sizeof(VkImageView) * swapchain->image_view_count);
 
-    for (uint32_t i = 0; i < context->swapchain_image_count; ++i) {
-        VkImageViewCreateInfo create_info = {0};
-        create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        create_info.image = context->swapchain_images[i];
-        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        create_info.format = context->swapchain_image_format;
-        create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        create_info.subresourceRange.baseMipLevel = 0;
-        create_info.subresourceRange.levelCount = 1;
-        create_info.subresourceRange.baseArrayLayer = 0;
-        create_info.subresourceRange.layerCount = 1;
-
-        VkResult result = vkCreateImageView(logical_device->device, &create_info, NULL, &context->swapchain_image_views[i]);
-        if(result != VK_SUCCESS) {
-            log_error("Vulkan: failed to create swapchain image view (%s).", vk_result_to_string(result));
-        }
+    for (u32 i = 0; i < swapchain->image_view_count; ++i) {
+        VkImageViewCreateInfo create_info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = swapchain->images[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = swapchain->image_format,
+            .components.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .components.g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .components.b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .components.a = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .subresourceRange.baseMipLevel = 0,
+            .subresourceRange.levelCount = 1,
+            .subresourceRange.baseArrayLayer = 0,
+            .subresourceRange.layerCount = 1,
+        };
+        VK_CHECK(vkCreateImageView(logical_device->handle, &create_info, NULL, &swapchain->image_views[i]),
+                 "failed to create swapchain image view");
     }
 }
 
-void vkc_free_swapchain_image_views(struct vkc_context *context, struct vkc_logical_device *logical_device) {
-    for (uint32_t i = 0; i < context->swapchain_image_count; ++i) {
-        vkDestroyImageView(logical_device->device, context->swapchain_image_views[i], NULL);
+void vkc_destroy_swapchain_image_views(struct vkc_logical_device *logical_device, struct vkc_swapchain *swapchain) {
+    for (u32 i = 0; i < swapchain->image_view_count; ++i) {
+        vkDestroyImageView(logical_device->handle, swapchain->image_views[i], NULL);
     }
-    free(context->swapchain_image_views);
+    VKC_MEMORY_FREE(swapchain->image_views);
 }
-#endif
