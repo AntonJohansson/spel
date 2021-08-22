@@ -11,10 +11,12 @@ enum log_type {
 typedef void platform_log_func(enum log_type, const char *, ...);
 typedef void *platform_allocate_memory_func(u64 size);
 typedef void platform_free_memory_func(void *mem);
+typedef void platform_abort_func();
 struct platform_function_table {
     platform_log_func *log;
     platform_allocate_memory_func *allocate_memory;
     platform_free_memory_func *free_memory;
+    platform_abort_func *abort;
 };
 
 struct game_memory {
@@ -45,11 +47,11 @@ struct render_entry_quad {
 struct GLFWwindow;
 typedef struct GLFWwindow GLFWwindow;
 
-struct vkc_context;
+struct render_context;
 
 struct renderer {
     GLFWwindow *window;
-    struct vkc_context *context;
+    struct render_context *context;
     struct platform_function_table platform;
     struct render_commands cmds;
     u8 memory[RENDERER_MEMORY_SIZE];

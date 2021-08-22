@@ -9,6 +9,7 @@
         VkResult result = expr;                                                 \
         if (result != VK_SUCCESS) {                                             \
             VKC_LOG_ERROR("Vulkan: " msg " (%s)", vk_result_to_string(result)); \
+            VKC_ABORT();                                                        \
         }                                                                       \
     } while(0)
 

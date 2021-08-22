@@ -124,6 +124,7 @@ int main(int argc, char **argv) {
         .log = platform_log,
         .allocate_memory = platform_allocate_memory,
         .free_memory = platform_free_memory,
+        .abort = platform_abort,
     };
 
     struct game_memory memory = {

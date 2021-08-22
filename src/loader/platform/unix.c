@@ -83,3 +83,7 @@ void *platform_allocate_memory(u64 size) {
 void platform_free_memory(void *mem) {
     free(mem);
 }
+
+void platform_abort() {
+    abort();
+}

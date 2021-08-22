@@ -10,3 +10,4 @@ void  platform_dlclose(void *handle);
 u64   platform_last_file_modify(const char *path);
 void *platform_allocate_memory(u64 size);
 void  platform_free_memory(void *mem);
+void  platform_abort();

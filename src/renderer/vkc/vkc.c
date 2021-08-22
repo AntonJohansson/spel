@@ -10,39 +10,25 @@
     #error define VKC_LOG_INFO!
 #endif
 
+#ifndef VKC_ABORT
+    #error define VKC_ABORT!
+#endif
+
+#ifndef VKC_MEMORY_ALLOC
+    #error define VKC_MEMORY_ALLOC!
+#endif
+
+#ifndef VKC_MEMORY_FREE
+    #error define VKC_MEMORY_FREE!
+#endif
+
 #define MAX_FRAMES_IN_FLIGHT 2
 
 struct vkc_context {
     VkInstance instance;
     VkSurfaceKHR surface;
 
-    /* Physical device */
-
-    VkPhysicalDevice device;
-
-    u32 format_count;
-    u32 present_mode_count;
-    VkSurfaceCapabilitiesKHR capabilities;
-    VkSurfaceFormatKHR *formats;
-    VkPresentModeKHR *present_modes;
-
-    i32 graphics_family;
-    i32 present_family;
-
-    /* Logical device */
-
-    VkDevice device;
-    VkQueue graphics_queue;
-    VkQueue present_queue;
-
     /* Swap chain */
-
-    VkFormat swapchain_image_format;
-    VkExtent2D swapchain_extent;
-    VkSwapchainKHR swapchain;
-    u32 swapchain_image_count;
-    VkImage *swapchain_images;
-    VkImageView *swapchain_image_views; /* count of swapchain_image_count */
 
     VkRenderPass render_pass;
     VkPipelineLayout pipeline_layout;
@@ -64,3 +50,6 @@ struct vkc_context {
 
 #include "vkc_util.c"
 #include "vkc_instance.c"
+#include "vkc_physical_device.c"
+#include "vkc_logical_device.c"
+#include "vkc_swapchain.c"
