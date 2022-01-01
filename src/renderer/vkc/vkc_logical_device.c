@@ -70,7 +70,7 @@ void vkc_create_logical_device(struct vkc_physical_device *physical_device, stru
     create_info.enabledExtensionCount = 1;
     create_info.ppEnabledExtensionNames = &extension;
 
-    VK_CHECK(vkCreateDevice(physical_device->handle, &create_info, NULL, &logical_device->handle),
+    VKC_CHECK(vkCreateDevice(physical_device->handle, &create_info, NULL, &logical_device->handle),
         "failed to create logical device");
 
     vkGetDeviceQueue(logical_device->handle, physical_device->graphics_family, 0, &logical_device->graphics_queue);

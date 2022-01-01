@@ -1,4 +1,4 @@
-GLSLC := glslc
+GLSLC := glslangValidator
 
 BUILDDIR := $(abspath build)
 RESDIR := $(abspath res)
@@ -11,9 +11,8 @@ SHADER_SRCS = $(RESDIR)/vert.vert \
 	      $(RESDIR)/frag.frag
 SHADER_SPVS = $(patsubst %, %.spv, $(SHADER_SRCS))
 
-LIB_FLAGS := -shared -fPIE -fPIC
+LIB_FLAGS := -shared -fPIC
 COMMON_FLAGS := -I src/include -g -MMD
-include $(wildcard $(BUILDDIR)/*.d)
 
 .DEFAULT_GOAL := all
 all: $(BUILDDIR) $(CTTI) $(RENDERER) $(GAME) $(LOADER) $(SHADER_SPVS)
@@ -31,7 +30,7 @@ $(GAME): src/game/game.c
 	$(CC) -o $@ src/game/game.c $(COMMON_FLAGS) $(LIB_FLAGS)
 
 %.spv: %
-	$(GLSLC) -o $@ $^
+	$(GLSLC) -V -o $@ $^
 
 $(BUILDDIR):
-	mkdir -p $(BUILDDIR) && ln -s $(RESDIR) $(BUILDDIR)/res
+	mkdir -p $(BUILDDIR) && ln -sf $(RESDIR) $(BUILDDIR)

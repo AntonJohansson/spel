@@ -6,7 +6,7 @@ VkShaderModule vkc_create_shader_module(VkDevice device, const char *code, u64 c
     };
 
     VkShaderModule shader_module;
-    VK_CHECK(vkCreateShaderModule(device, &create_info, NULL, &shader_module),
+    VKC_CHECK(vkCreateShaderModule(device, &create_info, NULL, &shader_module),
              "failed to create shader module");
 
     return shader_module;
@@ -17,7 +17,7 @@ struct vkc_pipeline {
     VkPipelineLayout layout;
 };
 
-struct vkc_pipeline vkc_create_pipeline(VkDevice device, VkRenderPass renderpass, struct vkc_swapchain *swapchain, VkShaderModule vert_module, VkShaderModule frag_module) {
+struct vkc_pipeline vkc_create_pipeline(VkDevice device, VkRenderPass renderpass, struct vkc_swapchain *swapchain, VkShaderModule vert_module, VkShaderModule frag_module, VkVertexInputBindingDescription vertex_binding_desc, VkVertexInputAttributeDescription* vertex_attrib_desc, u32 attrib_count, VkDescriptorSetLayout *descriptor_set_layout) {
     VkPipelineShaderStageCreateInfo vert_create_info = {
         .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .stage  = VK_SHADER_STAGE_VERTEX_BIT,
@@ -35,10 +35,10 @@ struct vkc_pipeline vkc_create_pipeline(VkDevice device, VkRenderPass renderpass
     VkPipelineShaderStageCreateInfo shader_stages[] = {vert_create_info, frag_create_info};
     VkPipelineVertexInputStateCreateInfo vertex_input_info = {
         .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount   = 0,
-        .pVertexBindingDescriptions      = NULL,
-        .vertexAttributeDescriptionCount = 0,
-        .pVertexAttributeDescriptions    = NULL,
+        .vertexBindingDescriptionCount   = 1,
+        .pVertexBindingDescriptions      = &vertex_binding_desc,
+        .vertexAttributeDescriptionCount = attrib_count,
+        .pVertexAttributeDescriptions    = vertex_attrib_desc,
     };
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly = {
@@ -121,13 +121,13 @@ struct vkc_pipeline vkc_create_pipeline(VkDevice device, VkRenderPass renderpass
 
     VkPipelineLayoutCreateInfo pipeline_layout_info = {
         .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount         = 0,
-        .pSetLayouts            = NULL,
+        .setLayoutCount         = 1,
+        .pSetLayouts            = descriptor_set_layout,
         .pushConstantRangeCount = 0,
         .pPushConstantRanges    = NULL,
     };
     VkPipelineLayout layout = VK_NULL_HANDLE;
-    VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, NULL, &layout),
+    VKC_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, NULL, &layout),
              "failed to create pipeline layout");
 
     VkGraphicsPipelineCreateInfo pipeline_info = {
@@ -150,7 +150,7 @@ struct vkc_pipeline vkc_create_pipeline(VkDevice device, VkRenderPass renderpass
     };
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline),
+    VKC_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline),
              "failed to create graphics pipeline");
 
     return (struct vkc_pipeline) {pipeline, layout};

@@ -1,16 +1,25 @@
 #include <shared/api.h>
+#include <shared/types.h>
 #include <shared/input.h>
 
-void update(struct game_memory *memory, struct frame_input *input, struct render_commands *frame) {
-    struct render_entry_quad *quad = PUSH_RENDER_ENTRY(frame, render_entry_quad);
-    quad->lower_left_corner = V2(0,0);
-    quad->upper_right_corner = V2(0.5,0.5);
+void update(f32 t, GameMemory *memory, Input *input, RenderCommands *frame) {
+    memory->col.h += 100.f*t;
+    memory->col.s = 0.9f;
+    memory->col.l = 0.2f;
+    wrapHSL(&memory->col);
 
     if (input->active[INPUT_MOVE_LEFT]) {
-        memory->platform.log(LOG_INFO, "move left");
-    } else if (input->active[INPUT_MOVE_RIGHT]) {
-        memory->platform.log(LOG_INFO, "move right");
-    } else if (input->active[INPUT_JUMP]) {
-        memory->platform.log(LOG_INFO, "jump");
+        memory->pos.x -= 0.01f;
     }
+    if (input->active[INPUT_MOVE_RIGHT]) {
+        memory->pos.x += 0.01f;
+    }
+    if (input->active[INPUT_MOVE_UP]) {
+        memory->pos.y -= 0.01f;
+    }
+    if (input->active[INPUT_MOVE_DOWN]) {
+        memory->pos.y += 0.01f;
+    }
+
+    pushQuad(frame, memory->pos, VEC2(0.5, 0.5), convertHSLToRGB(memory->col));
 }

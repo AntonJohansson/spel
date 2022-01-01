@@ -1,15 +1,20 @@
+#include "platform.h"
+
 /* libc */
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <stdarg.h>
 
 /* unix */
 #include <dlfcn.h>
 #include <sys/stat.h>
-#include <stdarg.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <time.h>
 
-void platform_log(enum log_type type, const char *fmt, ...) {
+void platformLog(LogType type, const char *fmt, ...) {
     FILE *fd;
     switch (type) {
         case LOG_ERROR: {
@@ -44,94 +49,144 @@ void platform_log(enum log_type type, const char *fmt, ...) {
 
 /* dl */
 
-void *platform_dlopen(const char *path) {
+void *platformDynamicLibOpen(const char *path) {
     void *handle = dlopen(path, RTLD_NOW);
     if (!handle) {
-        platform_log(LOG_ERROR, "Failed to dlopen() with error %s!", dlerror());
+        platformLog(LOG_ERROR, "Failed to dlopen() with error %s!", dlerror());
         return NULL;
     }
     return handle;
 }
 
-void platform_dlsym(void **var, void *handle, const char *sym) {
+void platformDynamicLibLookup(void **var, void *handle, const char *sym) {
     *var = dlsym(handle, sym);
     if (!*var) {
-        platform_log(LOG_ERROR, "Failed to dlopen() for sym %s!", sym);
+        platformLog(LOG_ERROR, "Failed to dlopen() for sym %s!", sym);
     }
 }
 
-void platform_dlclose(void *handle) {
+void platformDynamicLibClose(void *handle) {
     dlclose(handle);
 }
 
 /* mem */
 
-void *platform_allocate_memory(u64 size) {
+u64 platformMemoryPageSize() {
+    return sysconf(_SC_PAGESIZE);
+}
+
+void *platformMemoryAllocatePages(u64 num_pages) {
+    u64 page_size = platformMemoryPageSize();
+    void *ptr = mmap(NULL, num_pages*page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, -1, 0);
+    if (ptr == MAP_FAILED) {
+        platformLog(LOG_ERROR, "Failed to allocate %llu pages (%s)", num_pages,  strerror(errno));
+    }
+    return ptr;
+}
+
+void platformMemoryFreePages(void *ptr, u64 num_pages) {
+    u64 page_size = platformMemoryPageSize();
+    if (munmap(ptr, num_pages*page_size) != 0) {
+        platformLog(LOG_ERROR, "Failed to free %llu pages (%s)", num_pages,  strerror(errno));
+    }
+}
+
+void *platformMemoryAllocate(u64 size) {
     void *mem = malloc(size);
     if (!mem) {
-        platform_log(LOG_ERROR, "Failed to allocate memory of size %lu!", size);
+        platformLog(LOG_ERROR, "Failed to allocate memory of size %lu!", size);
         return NULL;
     }
 
     return mem;
 }
 
-void platform_free_memory(void *mem) {
-    free(mem);
+void platformMemoryFree(void *mem) {
+    //free(mem);
 }
 
 /* file */
-
 static sds file_search_dir;
 
-void platform_set_file_search_dir(sds dir) {
+void platformFileSetSearchDir(sds dir) {
     file_search_dir = dir;
 }
 
-void platform_read_file_to_buffer(const char *path, u8 **buffer, u64 *size) {
+File platformFileOpen(const char *path, const char *mode) {
     sds path_in_dir = sdsnew(file_search_dir);
     path_in_dir = sdscat(sdscat(path_in_dir, "/"), path);
-    platform_log(LOG_INFO, path_in_dir);
-    FILE *fd = fopen(path_in_dir, "r");
+    platformLog(LOG_INFO, path_in_dir);
+    FILE *fd = fopen(path_in_dir, mode);
     if (!fd) {
-        platform_log(LOG_ERROR, "fopen %s (%s)", path_in_dir, strerror(errno));
+        platformLog(LOG_ERROR, "fopen %s (%s)", path_in_dir, strerror(errno));
         sdsfree(path_in_dir);
-        return;
+        return (File) { NULL };
     }
     sdsfree(path_in_dir);
 
-    if(fseek(fd, 0, SEEK_END) == -1) {
-        platform_log(LOG_ERROR, "fseek (%s)", strerror(errno));
-        fclose(fd);
+    return (File) { fd };
+}
+
+void platformFileClose(File file) {
+    if (!file.fd) {
+        platformLog(LOG_ERROR, "platform_close called on NULL fd");
         return;
     }
 
-    i64 ret = ftell(fd);
+    fclose(file.fd);
+}
+
+u64 platformFileSize(File file) {
+    if(fseek(file.fd, 0, SEEK_END) == -1) {
+        platformLog(LOG_ERROR, "fseek (%s)", strerror(errno));
+        platformFileClose(file);
+        return 0;
+    }
+
+    i64 ret = ftell(file.fd);
     if (ret == -1) {
-        platform_log(LOG_ERROR, "ftell (%s)", strerror(errno));
-        fclose(fd);
-        return;
-    }
-    *size = ret;
-
-    if (fseek(fd, 0, SEEK_SET) == -1) {
-        platform_log(LOG_ERROR, "fseek (%s)", strerror(errno));
-        fclose(fd);
-        return;
+        platformLog(LOG_ERROR, "ftell (%s)", strerror(errno));
+        platformFileClose(file);
+        return 0;
     }
 
-    *buffer = platform_allocate_memory(*size + 1);
+    if (fseek(file.fd, 0, SEEK_SET) == -1) {
+        platformLog(LOG_ERROR, "fseek (%s)", strerror(errno));
+        platformFileClose(file);
+        return 0;
+    }
+
+    return ret;
+}
+
+void platformFileReadToBuffer(const char *path, u8 **buffer, u64 *size) {
+    File file = platformFileOpen(path, "r");
+    *size = platformFileSize(file);
+    *buffer = platformMemoryAllocate(*size + 1);
     (*buffer)[*size] = 0;
 
-    if (fread(*buffer, 1, *size, fd) < *size) {
-        platform_log(LOG_ERROR, "fread (%s)", strerror(errno));
-        platform_free_memory(*buffer);
-        fclose(fd);
+    if (fread(*buffer, 1, *size, file.fd) < *size) {
+        platformLog(LOG_ERROR, "fread (%s)", strerror(errno));
+        platformMemoryFree(*buffer);
+        platformFileClose(file);
         return;
+    }
+    platformFileClose(file);
+}
+
+void platformFileWrite(File file, void *ptr, u64 size, u64 amount) {
+    if (fwrite(ptr, size, amount, file.fd) != amount) {
+        platformLog(LOG_ERROR, "platform_file_write failed to read amount %llu items of size %llu", amount, size);
     }
 }
 
-u64 platform_last_file_modify(const char *path) {
+void platformFileRead(File file, void *ptr, u64 size, u64 amount) {
+    if (fread(ptr, size, amount, file.fd) != amount) {
+        platformLog(LOG_ERROR, "platform_file_read failed to read amount %llu items of size %llu", amount, size);
+    }
+}
+
+u64 platformFileLastModify(const char *path) {
     struct stat file_info;
     if (stat(path, &file_info) == 0) {
         return (u64) file_info.st_mtim.tv_sec;
@@ -139,8 +194,47 @@ u64 platform_last_file_modify(const char *path) {
     return 0;
 }
 
+/* Time */
+
+Time platformTimeCurrent() {
+    struct timespec t;
+    if (clock_gettime(CLOCK_MONOTONIC, &t) != 0) {
+        platformLog(LOG_INFO, "clock_gettime failed!");
+    }
+    return (Time) {
+        .seconds = t.tv_sec,
+        .nanoseconds = t.tv_nsec,
+    };
+}
+
+Time platformTimeSubtract(Time t0, Time t1) {
+    return (Time) {
+        .seconds = t0.seconds - t1.seconds,
+        .nanoseconds = t0.nanoseconds - t1.nanoseconds,
+    };
+}
+
+u64 platformTimeToNanoseconds(Time t) {
+    return t.seconds * 1000000000 + t.nanoseconds;
+}
+
+bool platformTimeEarlierThan(Time t0, Time t1) {
+    return platformTimeToNanoseconds(t0) < platformTimeToNanoseconds(t1);
+}
+
+/* Sleep */
+void platformSleepNanoseconds(Time t) {
+    struct timespec tspec = {
+        .tv_sec = t.seconds,
+        .tv_nsec = t.nanoseconds,
+    };
+    /* Loop in case the sleep gets interrupted */
+    while (nanosleep(&tspec, &tspec) != 0) {
+    }
+}
+
 /* debug */
 
-void platform_abort() {
+void platformAbort() {
     abort();
 }

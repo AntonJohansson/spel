@@ -102,7 +102,7 @@ void vkc_create_swapchain(VkSurfaceKHR surface, struct vkc_logical_device *logic
         create_info.pQueueFamilyIndices = NULL;
     }
 
-    VK_CHECK(vkCreateSwapchainKHR(logical_device->handle, &create_info, NULL, &swapchain->handle),
+    VKC_CHECK(vkCreateSwapchainKHR(logical_device->handle, &create_info, NULL, &swapchain->handle),
              "failed to create swapchain");
 
     vkGetSwapchainImagesKHR(logical_device->handle, swapchain->handle, &image_count, NULL);
@@ -112,7 +112,7 @@ void vkc_create_swapchain(VkSurfaceKHR surface, struct vkc_logical_device *logic
 }
 
 void vkc_destroy_swapchain(struct vkc_logical_device *logical_device, struct vkc_swapchain *swapchain) {
-    VKC_MEMORY_FREE(swapchain->images);
+    //VKC_MEMORY_FREE(swapchain->images);
     vkDestroySwapchainKHR(logical_device->handle, swapchain->handle, NULL);
 }
 
@@ -136,7 +136,7 @@ void vkc_create_swapchain_image_views(struct vkc_logical_device *logical_device,
             .subresourceRange.baseArrayLayer = 0,
             .subresourceRange.layerCount = 1,
         };
-        VK_CHECK(vkCreateImageView(logical_device->handle, &create_info, NULL, &swapchain->image_views[i]),
+        VKC_CHECK(vkCreateImageView(logical_device->handle, &create_info, NULL, &swapchain->image_views[i]),
                  "failed to create swapchain image view");
     }
 }

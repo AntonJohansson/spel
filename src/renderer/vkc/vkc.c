@@ -40,7 +40,6 @@ struct vkc_context {
 
     VkSemaphore sem_image_available[MAX_FRAMES_IN_FLIGHT];
     VkSemaphore sem_render_finished[MAX_FRAMES_IN_FLIGHT];
-
     VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
     VkFence in_flight_images[MAX_FRAMES_IN_FLIGHT];
 
@@ -55,3 +54,4 @@ struct vkc_context {
 #include "vkc_renderpass.c"
 #include "vkc_graphics_pipeline.c"
 #include "vkc_framebuffer.c"
+#include "vkc_command_buffer.c"

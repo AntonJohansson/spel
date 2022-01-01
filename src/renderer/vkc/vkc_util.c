@@ -1,10 +1,16 @@
+#define VKC_MIN(a, b) \
+    ((a <= b) ? a : b)
+
+#define VKC_MAX(a, b) \
+    ((a >= b) ? a : b)
+
 #define VKC_CLAMP(x, lower, higher) \
-	((x < lower) ? lower : (x > higher) ? higher : x)
+    (VKC_MIN(VKC_MAX(x, lower), higher))
 
 #define VKC_ARRLEN(arr) \
-	(sizeof(arr)/sizeof(arr[0]))
+    (sizeof(arr)/sizeof(arr[0]))
 
-#define VK_CHECK(expr, msg)                                                     \
+#define VKC_CHECK(expr, msg)                                                    \
     do {                                                                        \
         VkResult result = expr;                                                 \
         if (result != VK_SUCCESS) {                                             \
@@ -108,12 +114,12 @@ static const char* vk_result_to_string(VkResult result) {
     case VK_ERROR_INVALID_DEVICE_ADDRESS_EXT:
         return "VK_ERROR_INVALID_DEVICE_ADDRESS_EXT";
         break;
-    //case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT:
-    //	return "VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT"; break;
-    //case VK_ERROR_OUT_OF_POOL_MEMORY_KHR:
-    //	return "VK_ERROR_OUT_OF_POOL_MEMORY_KHR"; break;
-    //case VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR:
-    //	return "VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR"; break;
+        //case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT:
+        //	return "VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT"; break;
+        //case VK_ERROR_OUT_OF_POOL_MEMORY_KHR:
+        //	return "VK_ERROR_OUT_OF_POOL_MEMORY_KHR"; break;
+        //case VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR:
+        //	return "VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR"; break;
     case VK_RESULT_MAX_ENUM:
         return "VK_RESULT_MAX_ENUM";
         break;

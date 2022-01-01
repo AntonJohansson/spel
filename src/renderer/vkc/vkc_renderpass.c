@@ -41,7 +41,7 @@ VkRenderPass vkc_create_renderpass(VkDevice device, struct vkc_swapchain *swapch
     };
 
     VkRenderPass pass = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateRenderPass(device, &render_pass_info, NULL, &pass),
+    VKC_CHECK(vkCreateRenderPass(device, &render_pass_info, NULL, &pass),
              "failed to create render pass");
 
     return pass;

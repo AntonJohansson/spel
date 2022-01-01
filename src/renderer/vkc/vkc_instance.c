@@ -65,7 +65,7 @@ static VkInstance vkc_create_instance(const char **extensions, u32 extension_cou
     };
 
     VkInstance instance;
-    VK_CHECK(vkCreateInstance(&create_info, NULL, &instance), "failed to create instance");
+    VKC_CHECK(vkCreateInstance(&create_info, NULL, &instance), "failed to create instance");
 
     return instance;
 }

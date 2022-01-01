@@ -16,7 +16,7 @@ VkFramebuffer *vkc_create_framebuffers(VkDevice device, VkRenderPass renderpass,
             .layers          = 1,
         };
 
-        VK_CHECK(vkCreateFramebuffer(device, &fb_info, NULL, &fbs[i]),
+        VKC_CHECK(vkCreateFramebuffer(device, &fb_info, NULL, &fbs[i]),
                  "failed to create frame buffer");
     }
 

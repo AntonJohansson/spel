@@ -3,17 +3,47 @@
 #include <shared/types.h>
 #include <shared/api.h>
 
-void  platform_log(enum log_type type, const char *fmt, ...);
-/* dl */
-void *platform_dlopen(const char *path);
-void  platform_dlsym(void **var, void *handle, const char *sym);
-void  platform_dlclose(void *handle);
-/* mem */
-void *platform_allocate_memory(u64 size);
-void  platform_free_memory(void *mem);
-/* file */
-void  platform_set_search_dir(
-u64   platform_last_file_modify(const char *path);
-void  platform_read_file_to_buffer(const char *path, u8 *buffer, u64 *size);
+void platformLog(LogType type, const char *fmt, ...);
+
+/* Dynamic library */
+void *platformDynamicLibOpen(const char *path);
+void  platformDynamicLibLookup(void **var, void *handle, const char *sym);
+void  platformDynamicLibClose(void *handle);
+
+/* Memory */
+u64   platformMemoryPageSize();
+void *platformMemoryAllocatePages(u64 num_pages);
+void  platformMemoryFreePages(void *ptr, u64 num_pages);
+void *platformMemoryAllocate(u64 size);
+void  platformMemoryFree(void *mem);
+
+/* File */
+typedef struct File {
+    void *fd;
+} File;
+
+void  platformFileSetSearchDir(sds dir);
+File  platformFileOpen(const char *path, const char *mode);
+void  platformFileClose(File file);
+u64   platformFileSize(File file);
+void  platformFileReadToBuffer(const char *path, u8 **buffer, u64 *size);
+void  platformFileWrite(File file, void *ptr, u64 size, u64 amount);
+void  platformFileRead(File file, void *ptr, u64 size, u64 amount);
+u64   platformFileLastModify(const char *path);
+
+/* Time */
+typedef struct Time {
+    u64 seconds;
+    u64 nanoseconds;
+} Time;
+
+Time platformTimeCurrent();
+Time platformTimeSubtract(Time t0, Time t1);
+u64  platformTimeToNanoseconds(Time t);
+bool platformTimeEarlierThan(Time t0, Time t1);
+
+/* Sleep */
+void platformSleepNanoseconds(Time t);
+
 /* debug */
-void  platform_abort();
+void  platformAbort();

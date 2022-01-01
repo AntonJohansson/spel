@@ -1,6 +1,5 @@
 
 static void mouse_move_callback(GLFWwindow *window, double x, double y) {
-
     static double last_normalized_x = 0.0;
     static double last_normalized_y = 0.0;
 
@@ -22,9 +21,22 @@ static void mouse_scroll_callback(GLFWwindow *window, double xoffset, double yof
 
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
-        enum input_type type = global_key_map[key];
+        InputType type = global_key_map[key];
+        InputType debug_type = global_debug_key_map[key];
         if (type != INPUT_EMPTY) {
             global_frame_input.active[type] = true;
+        }
+        if (debug_type != INPUT_EMPTY) {
+            global_debug_frame_input.active[debug_type] = true;
+        }
+    } else if (action == GLFW_RELEASE) {
+        InputType type = global_key_map[key];
+        InputType debug_type = global_debug_key_map[key];
+        if (type != INPUT_EMPTY) {
+            global_frame_input.active[type] = false;
+        }
+        if (debug_type != INPUT_EMPTY) {
+            global_debug_frame_input.active[debug_type] = false;
         }
     }
 }
