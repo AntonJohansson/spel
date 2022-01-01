@@ -260,21 +260,25 @@ int main(int argc, char **argv) {
         /* Recording input */
         if (global_debug_frame_input.active[DEBUG_INPUT_RECORD_START]) {
             if (debug_state.record_state == IDLE) {
+                platformLog(LOG_INFO, "Starting recording");
                 debug_state.record_state = RECORDING;
             }
         }
         if (global_debug_frame_input.active[DEBUG_INPUT_RECORD_STOP]) {
             if (debug_state.record_state == RECORDING) {
+                platformLog(LOG_INFO, "Stopping recording");
                 debug_state.record_state = IDLE;
             }
         }
         if (global_debug_frame_input.active[DEBUG_INPUT_REPLAY_START]) {
             if (debug_state.record_state == IDLE) {
+                platformLog(LOG_INFO, "Starting replay");
                 debug_state.record_state = REPLAYING;
             }
         }
         if (global_debug_frame_input.active[DEBUG_INPUT_REPLAY_STOP]) {
             if (debug_state.record_state == REPLAYING) {
+                platformLog(LOG_INFO, "Stopping replay");
                 debug_state.record_state = IDLE;
                 memcpy(&game_memory, &debug_state.replay_old_memory, sizeof(GameMemory));
                 memcpy(&global_frame_input, &debug_state.replay_old_input, sizeof(Input));
@@ -308,6 +312,7 @@ int main(int argc, char **argv) {
             memcpy(&global_frame_input, &debug_state.replay_memory[debug_state.replay_index].input, sizeof(Input));
             memcpy(&game_memory, &debug_state.replay_memory[debug_state.replay_index].game_memory, sizeof(GameMemory));
             debug_state.replay_index = (debug_state.replay_index + 1) % debug_state.replay_count;
+            platformLog(LOG_INFO, "Replay frame: %llu/%llu", debug_state.replay_index, debug_state.replay_count);
         } else if (debug_state.record_state == IDLE && debug_state.is_record_file_open) {
             platformLog(LOG_INFO, "closing fd");
             platformFileClose(debug_state.record_file);

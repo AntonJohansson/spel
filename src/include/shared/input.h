@@ -19,6 +19,7 @@ typedef enum InputType {
  * actions
  */
 typedef enum DebugInputType {
+    DEBUG_INPUT_EMPTY = 0,
     DEBUG_INPUT_RECORD_START,
     DEBUG_INPUT_RECORD_STOP,
     DEBUG_INPUT_REPLAY_START,

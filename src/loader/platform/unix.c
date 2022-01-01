@@ -229,8 +229,9 @@ void platformSleepNanoseconds(Time t) {
         .tv_nsec = t.nanoseconds,
     };
     /* Loop in case the sleep gets interrupted */
-    while (nanosleep(&tspec, &tspec) != 0) {
-    }
+    nanosleep(&tspec, NULL);
+    //while (nanosleep(&tspec, &tspec) != 0) {
+    //}
 }
 
 /* debug */

@@ -26,7 +26,7 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
         if (type != INPUT_EMPTY) {
             global_frame_input.active[type] = true;
         }
-        if (debug_type != INPUT_EMPTY) {
+        if (debug_type != DEBUG_INPUT_EMPTY) {
             global_debug_frame_input.active[debug_type] = true;
         }
     } else if (action == GLFW_RELEASE) {

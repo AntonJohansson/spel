@@ -13,6 +13,7 @@ SHADER_SPVS = $(patsubst %, %.spv, $(SHADER_SRCS))
 
 LIB_FLAGS := -shared -fPIC
 COMMON_FLAGS := -I src/include -g -MMD
+include $(wildcard $(BUILDDIR)/*.d)
 
 .DEFAULT_GOAL := all
 all: $(BUILDDIR) $(CTTI) $(RENDERER) $(GAME) $(LOADER) $(SHADER_SPVS)
