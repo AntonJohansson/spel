@@ -25,7 +25,7 @@ $(LOADER): src/loader/loader.c
 	$(CC) -o $@ src/loader/loader.c $(COMMON_FLAGS) -ldl -lpthread -lglfw
 
 $(RENDERER): src/renderer/renderer.c
-	$(CC) -o $@ src/renderer/renderer.c -lvulkan -lpthread $(COMMON_FLAGS) $(LIB_FLAGS)
+	$(CC) -o $@ src/renderer/renderer.c -lvulkan -lfreetype -lpthread -I/usr/include/freetype2 $(COMMON_FLAGS) $(LIB_FLAGS)
 
 $(GAME): src/game/game.c
 	$(CC) -o $@ src/game/game.c $(COMMON_FLAGS) $(LIB_FLAGS)

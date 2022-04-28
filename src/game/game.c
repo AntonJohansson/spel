@@ -21,5 +21,6 @@ void update(f32 t, GameMemory *memory, Input *input, RenderCommands *frame) {
         memory->pos.y += 0.01f;
     }
 
-    pushQuad(frame, memory->pos, VEC2(0.5, 0.5), convertHSLToRGB(memory->col));
+    pushQuad(frame, VEC2(0.25f,0.25f), VEC2(0.5f, 0.5f), convertHSLToRGB(memory->col));
+    pushQuad(frame, memory->pos, VEC2(0.5f, 0.5f), convertHSLToRGB(memory->col));
 }
