@@ -46,7 +46,7 @@ static inline PackNode **find_best_pack_pos(PackContext *context, u32 width, u32
     PackNode **prev = &context->active_list;
     PackNode **best = NULL;
     while (node->x + width <= context->width) {
-        u32 y; 
+        u32 y;
         find_min_y(context, node, node->x, width, &y);
         if (y < best_y) {
             best_y = y;
@@ -81,7 +81,7 @@ static inline void pack_rectangles(PackContext *context, PackRect *rects, u64 re
     context->nodes[1].next = NULL;
 
     context->free_list = &context->nodes[2];
-    
+
     quicksort(rects, sizeof(PackRect), rects_size, compare_pack_rects);
     for (u64 i = 0; i < rects_size; ++i) {
         if (rects[i].width > 0 && rects[i].height > 0) {
@@ -92,7 +92,7 @@ static inline void pack_rectangles(PackContext *context, PackRect *rects, u64 re
             if (!best || y + rects[i].height > context->height || context->free_list == NULL) {
                 rects[i].x = -1;
                 rects[i].y = -1;
-                platform.log(LOG_ERROR, "failed to pack!");
+                //platform.log(LOG_ERROR, "failed to pack!");
                 assert(false);
                 return;
             }

@@ -2,6 +2,9 @@
 #include <GLFW/glfw3.h>
 #include "third_party/sds.c"
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
 /* shared */
 #include <shared/types.h>
 #include <shared/api.h>
@@ -13,7 +16,7 @@
 
 #include "platform/unix.c"
 
-/* 
+/*
  * Function tables
  */
 
@@ -222,6 +225,7 @@ int main(int argc, char **argv) {
         .platform = platform_functions,
     };
 
+
     Renderer renderer = {
         .platform = platform_functions,
     };
@@ -322,7 +326,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        /* Call out to game modules */ 
+        /* Call out to game modules */
         if (renderer_functions.begin_frame) {
             frame = renderer_functions.begin_frame(&renderer);
         }

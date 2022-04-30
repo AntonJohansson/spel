@@ -1,16 +1,9 @@
 #include <shared/api.h>
 PlatformFunctionTable platform;
-#include <shared/quicksort.h>
-#include <shared/pack_rectangles.h>
+
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-
-#include <ft2build.h>
-#include FT_FREETYPE_H
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
 
 #include <stdbool.h>
 
@@ -75,7 +68,9 @@ struct RenderContext {
     VkDescriptorPool descriptor_pool;
     VkDescriptorSet *descriptor_sets;
 
-    struct vkc_pipeline pipeline;
+    struct vkc_pipeline color_pipeline;
+    struct vkc_pipeline texture_pipeline;
+    struct vkc_pipeline atlas_pipeline;
 
     u32 framebuffer_count;
     VkFramebuffer *framebuffers;
@@ -100,9 +95,20 @@ struct RenderContext {
 
     u32 current_frame_index;
 
+    VkShaderModule color_vert_module;
+    VkShaderModule color_frag_module;
+
+    VkShaderModule texture_vert_module;
+    VkShaderModule texture_frag_module;
+
+    VkShaderModule atlas_vert_module;
+    VkShaderModule atlas_frag_module;
+
     VkImage texture_image;
     VkDeviceMemory texture_image_memory;
     VkImageView texture_image_view;
+    bool has_texture;
+
     VkSampler texture_sampler;
 };
 
@@ -112,10 +118,10 @@ struct RenderContext {
 
 RenderContext *context;
 
-struct vertex {
+typedef struct Vertex {
     f32 pos[2];
     f32 texcoord[2];
-};
+} Vertex;
 
 struct uniform_buffer_object {
     _Alignas(16) f32 pos[2];
@@ -123,16 +129,20 @@ struct uniform_buffer_object {
 };
 
 typedef struct ShapePushConstants {
-    _Alignas(16) f32 pos[2];
-    _Alignas(16) f32 col[3];
+    f32 pos[2];
+    f32 scale[2];
+    f32 col[3];
+    f32 offset[2];
+    f32 size[2];
 } ShapePushConstants;
 
 /* vertex buffer */
-const struct vertex vertices[] = {
-    {{-1.0f, -1.0f}, {1.0f, 0.0f}},
-    {{ 1.0f, -1.0f}, {0.0f, 0.0f}},
-    {{ 1.0f,  1.0f}, {0.0f, 1.0f}},
-    {{-1.0f,  1.0f}, {1.0f, 1.0f}},
+
+const Vertex vertices[] = {
+    {{-0.5f, -0.5f}, {0.0f, 0.0f}},
+    {{ 0.5f, -0.5f}, {1.0f, 0.0f}},
+    {{ 0.5f,  0.5f}, {1.0f, 1.0f}},
+    {{-0.5f,  0.5f}, {0.0f, 1.0f}},
 };
 
 const u16 indices[] = {
@@ -563,7 +573,7 @@ static void endSingleTimeCommands(VkDevice device, VkQueue queue, VkCommandPool 
         .commandBufferCount = 1,
     };
     vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
-    /* 
+    /*
      * TODO(anjo): We are performing and waiting for one copy at a time.
      * We could instead use a fence and perform multiple ones
      */
@@ -787,7 +797,7 @@ static void create_descriptor_pool(VkDevice device, u32 count, VkDescriptorPool 
         .maxSets = count,
     };
 
-    VKC_CHECK(vkCreateDescriptorPool(device, &pool_info, NULL, descriptor_pool), "failed to create descriptor pool!"); 
+    VKC_CHECK(vkCreateDescriptorPool(device, &pool_info, NULL, descriptor_pool), "failed to create descriptor pool!");
 }
 
 static void create_descriptor_sets(VkDevice device, u32 count, VkDescriptorPool *descriptor_pool, VkDescriptorSetLayout descriptor_set_layout, VkDescriptorSet *descriptor_sets) {
@@ -820,7 +830,10 @@ bool getSwapchainInfo(VkSurfaceKHR surface, struct vkc_physical_device *physical
     vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device->handle, surface, &vk_format_count, vk_formats);
     bool format_found = false;
     for (u32 i = 0; i < vk_format_count; ++i) {
-        if (vk_formats[i].format == VK_FORMAT_B8G8R8A8_SRGB && vk_formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        platform.log(LOG_INFO, "format: %d space %d", vk_formats[i].format, vk_formats[i].colorSpace);
+        if ((vk_formats[i].format == VK_FORMAT_B8G8R8A8_UNORM ||
+             vk_formats[i].format == VK_FORMAT_B8G8R8A8_SRGB) &&
+            vk_formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             info->surface_format = vk_formats[i];
             format_found = true;
             break;
@@ -1012,7 +1025,7 @@ VkRenderPass vkc_create_renderpass(VkDevice device, Swapchain *swapchain) {
 
 /* Pipeline */
 
-VkShaderModule vkc_create_shader_module(VkDevice device, const char *code, u64 code_size) {
+VkShaderModule create_shader_module(VkDevice device, const char *code, u64 code_size) {
     VkShaderModuleCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = code_size,
@@ -1026,7 +1039,30 @@ VkShaderModule vkc_create_shader_module(VkDevice device, const char *code, u64 c
     return shader_module;
 }
 
-struct vkc_pipeline vkc_create_pipeline(VkDevice device, VkRenderPass renderpass, Swapchain *swapchain, VkShaderModule vert_module, VkShaderModule frag_module, VkVertexInputBindingDescription vertex_binding_desc, VkVertexInputAttributeDescription* vertex_attrib_desc, u32 attrib_count, VkDescriptorSetLayout *descriptor_set_layout) {
+struct vkc_pipeline create_pipeline(VkDevice device, VkRenderPass renderpass, Swapchain *swapchain, VkShaderModule vert_module, VkShaderModule frag_module, VkVertexInputBindingDescription vertex_binding_desc, VkVertexInputAttributeDescription* vertex_attrib_desc, u32 attrib_count, VkDescriptorSetLayout *descriptor_set_layout) {
+
+    // Create the pipeline layout
+
+    VkPushConstantRange push_constant = {
+        .offset = 0,
+        .size = sizeof(ShapePushConstants),
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    };
+
+    const u32 set_layout_count = (descriptor_set_layout != NULL) ? 1 : 0;
+    VkPipelineLayoutCreateInfo pipeline_layout_info = {
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount         = set_layout_count,
+        .pSetLayouts            = descriptor_set_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges    = &push_constant,
+    };
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VKC_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, NULL, &layout),
+             "failed to create pipeline layout");
+
+    // Create the pipeline stages
+
     VkPipelineShaderStageCreateInfo vert_create_info = {
         .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .stage  = VK_SHADER_STAGE_VERTEX_BIT,
@@ -1128,23 +1164,6 @@ struct vkc_pipeline vkc_create_pipeline(VkDevice device, VkRenderPass renderpass
         .blendConstants[3] = 0.0f,
     };
 
-    VkPushConstantRange push_constant = {
-        .offset = 0,
-        .size = sizeof(ShapePushConstants),
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-    };
-
-    VkPipelineLayoutCreateInfo pipeline_layout_info = {
-        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount         = 1,
-        .pSetLayouts            = descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges    = &push_constant,
-    };
-    VkPipelineLayout layout = VK_NULL_HANDLE;
-    VKC_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, NULL, &layout),
-             "failed to create pipeline layout");
-
     VkGraphicsPipelineCreateInfo pipeline_info = {
         .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount          = 2,
@@ -1212,108 +1231,8 @@ static void createTextureImageView() {
     context->texture_image_view = createImageView(context->texture_image, VK_FORMAT_R8_SRGB);
 }
 
-static void createTextureImage() {
-    u8 *pixels;
-    i32 width, height, channels;
-
-#if 0
-    const char *file = "res/textures/head.jpg";
-
-    pixels = stbi_load(file, &width, &height, &channels, STBI_rgb_alpha);
-    if (!pixels) {
-        platform.log(LOG_ERROR, "stb_image: failed to load %s!", file);
-        return;
-    }
-#else
-    FT_Library ft;
-    if (FT_Init_FreeType(&ft)) {
-        platform.log(LOG_ERROR, "FreeType: Could not init!");
-        return;
-    }
-
-    u8 *font = NULL;
-    u64 file_size = 0;
-    platform.read_file_to_buffer("res/fonts/lmroman5-regular.otf", &font, &file_size);
-
-    FT_Open_Args args = {
-        .flags = FT_OPEN_MEMORY,
-        .memory_base = font,
-        .memory_size = file_size,
-        .pathname = NULL,
-        .stream = 0,
-        .driver = NULL,
-        .num_params = 0,
-        .params = NULL,
-    };
-
-    FT_Face face;
-    if (FT_Open_Face(ft, &args, 0, &face)) {
-        platform.log(LOG_ERROR, "FreeType: Could not open face!");
-        return;
-    }
-
-    platform.log(LOG_INFO, "num faces %ld", face->num_faces);
-    platform.log(LOG_INFO, "num glyphs %ld", face->num_glyphs);
-    platform.log(LOG_INFO, "family name %s", face->family_name);
-    platform.log(LOG_INFO, "style name %s", face->style_name);
-    platform.log(LOG_INFO, "num fixed sizes %d", face->num_fixed_sizes);
-    platform.log(LOG_INFO, "num fixed sizes %d", face->size);
-
-    platform.free_memory(font);
-
-    const u32 font_size = 120;
-    FT_Set_Pixel_Sizes(face, 0, font_size);
-    platform.log(LOG_INFO, "num fixed sizes %d", face->size);
-
-    const u32 num_chars = 128;
-    PackRect rects[num_chars];
-
-    /* Load font rects */
-    for (u8 i = 0; i < num_chars; ++i) {
-        if (FT_Load_Char(face, i, FT_LOAD_BITMAP_METRICS_ONLY)) {
-            platform.log(LOG_ERROR, "FreeType: Could not load glyph for character: %c", i);
-            return;
-        }
-        //if (rects[i].width > 0 && rects[i].height > 0)
-        rects[i].width = face->glyph->bitmap.width;
-        rects[i].height = face->glyph->bitmap.rows;
-        rects[i].user_id = i;
-    }
-
-    const u32 pack_width = sqrt(font_size*font_size*num_chars);
-    const u32 pack_height = pack_width;
-    PackNode nodes[pack_width+2];
-    PackContext pack_context = {
-        .width = pack_width,
-        .height = pack_height,
-        .num_nodes = pack_width + 2,
-        .nodes = nodes,
-    };
-    pack_rectangles(&pack_context, rects, num_chars);
-
-    u8 pack_pixels[pack_width*pack_height];
-    for (u8 i = 0; i < num_chars; ++i) {
-        u8 codepoint = rects[i].user_id;
-        if (FT_Load_Char(face, codepoint, FT_LOAD_RENDER)) {
-            platform.log(LOG_ERROR, "FreeType: Could not load glyph for character: %c", codepoint);
-            return;
-        }
-        if (rects[i].width > 0 && rects[i].height > 0) {
-            for (u32 y = 0; y < rects[i].height; ++y) {
-                for (u32 x = 0; x < rects[i].width; ++x) {
-                    pack_pixels[(rects[i].y + y)*pack_width + rects[i].x + x] = face->glyph->bitmap.buffer[y*rects[i].width + x];
-                }
-            }
-        }
-    }
-
-    width = pack_width;
-    height = pack_height;
-    channels = 1;
-    pixels = pack_pixels;
-#endif
-
-    VkDeviceSize size = width * height * channels;
+static void createTextureImage(Image *image) {
+    VkDeviceSize size = image->width * image->height * image->channels;
     VkBuffer staging_buffer;
     VkDeviceMemory staging_buffer_memory;
 
@@ -1321,15 +1240,13 @@ static void createTextureImage() {
 
     void *data;
     vkMapMemory(context->logical_device.handle, staging_buffer_memory, 0, size, 0, &data);
-    memcpy(data, pixels, size);
+    memcpy(data, image->pixels, size);
     vkUnmapMemory(context->logical_device.handle, staging_buffer_memory);
 
-    //stbi_image_free(pixels);
-
-    createImage(context->logical_device.handle, width, height, VK_FORMAT_R8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &context->texture_image, &context->texture_image_memory);
+    createImage(context->logical_device.handle, image->width, image->height, VK_FORMAT_R8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &context->texture_image, &context->texture_image_memory);
 
     transitionImageLayout(context->logical_device.handle, context->logical_device.graphics_queue, context->command_pool, context->texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, VK_ACCESS_TRANSFER_WRITE_BIT);
-    copyBufferToImage(context->logical_device.handle, context->logical_device.graphics_queue, context->command_pool, staging_buffer, context->texture_image, width, height);
+    copyBufferToImage(context->logical_device.handle, context->logical_device.graphics_queue, context->command_pool, staging_buffer, context->texture_image, image->width, image->height);
     transitionImageLayout(context->logical_device.handle, context->logical_device.graphics_queue, context->command_pool, context->texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 
     vkDestroyBuffer(context->logical_device.handle, staging_buffer, NULL);
@@ -1351,7 +1268,10 @@ static void cleanup_swapchain() {
     vkc_destroy_command_buffers(context->logical_device.handle, context->command_pool, context->command_buffers, context->swapchain.image_count);
 
     vkc_destroy_framebuffers(context->logical_device.handle, context->framebuffers, context->framebuffer_count);
-    vkc_destroy_pipeline(context->logical_device.handle, context->pipeline);
+    // TODO(anjo): why does cleanup swapchain destroy renderpasses and pipelines? Only our eternal lord knows
+    vkc_destroy_pipeline(context->logical_device.handle, context->color_pipeline);
+    vkc_destroy_pipeline(context->logical_device.handle, context->texture_pipeline);
+    vkc_destroy_pipeline(context->logical_device.handle, context->atlas_pipeline);
     vkDestroyRenderPass(context->logical_device.handle, context->renderpass, NULL);
     destroySwapchainImageViews(&context->logical_device, &context->swapchain);
     destroySwapchain(&context->logical_device, &context->swapchain);
@@ -1409,52 +1329,113 @@ static void recreate_swapchain(Renderer *r) {
     createSwapchainImageViews(&context->logical_device, &context->swapchain);
     context->renderpass = vkc_create_renderpass(context->logical_device.handle, &context->swapchain);
 
-    u8 *vert_code = NULL;
-    u64 vert_code_size = 0;
-    platform.read_file_to_buffer("res/vert.vert.spv", &vert_code, &vert_code_size);
-    u8 *frag_code = NULL;
-    u64 frag_code_size = 0;
-    platform.read_file_to_buffer("res/frag.frag.spv", &frag_code, &frag_code_size);
-    VkShaderModule vert_module = vkc_create_shader_module(context->logical_device.handle, vert_code, vert_code_size);
-    VkShaderModule frag_module = vkc_create_shader_module(context->logical_device.handle, frag_code, frag_code_size);
-    platform.free_memory(vert_code);
-    platform.free_memory(frag_code);
-
-    VkVertexInputBindingDescription binding_description = {
-        .binding = 0,
-        .stride = sizeof(struct vertex),
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-    };
-
-    VkVertexInputAttributeDescription attribute_descriptions[2] = {
-        [0] = {
+    {
+        VkVertexInputBindingDescription binding_description = {
             .binding = 0,
-            .location = 0,
-            .format = VK_FORMAT_R32G32_SFLOAT,
-            .offset = offsetof(struct vertex, pos),
-        },
-        [1] = {
-            .binding = 0,
-            .location = 1,
-            .format = VK_FORMAT_R32G32_SFLOAT,
-            .offset = offsetof(struct vertex, texcoord),
-        },
-    };
+            .stride = sizeof(Vertex),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+
+        VkVertexInputAttributeDescription attribute_descriptions[] = {
+            [0] = {
+                .binding = 0,
+                .location = 0,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, pos),
+            },
+        };
+
+        context->color_pipeline = create_pipeline(context->logical_device.handle,
+                                                  context->renderpass,
+                                                  &context->swapchain,
+                                                  context->color_vert_module,
+                                                  context->color_frag_module,
+                                                  binding_description,
+                                                  attribute_descriptions,
+                                                  ARRLEN(attribute_descriptions),
+                                                  NULL);
+    }
 
     create_descriptor_pool(context->logical_device.handle, context->swapchain.image_count, &context->descriptor_pool);
+    context->descriptor_sets = platform.allocate_memory(sizeof(VkDescriptorSet) * context->swapchain.image_count);
     create_descriptor_sets(context->logical_device.handle, context->swapchain.image_count, &context->descriptor_pool, context->descriptor_set_layout, context->descriptor_sets);
 
-    context->pipeline = vkc_create_pipeline(context->logical_device.handle, context->renderpass, &context->swapchain, vert_module, frag_module, binding_description, attribute_descriptions, ARRLEN(attribute_descriptions), &context->descriptor_set_layout);
+    {
 
-    vkDestroyShaderModule(context->logical_device.handle, vert_module, NULL);
-    vkDestroyShaderModule(context->logical_device.handle, frag_module, NULL);
+        VkVertexInputBindingDescription binding_description = {
+            .binding = 0,
+            .stride = sizeof(Vertex),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+
+        VkVertexInputAttributeDescription attribute_descriptions[] = {
+            [0] = {
+                .binding = 0,
+                .location = 0,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, pos),
+            },
+            [1] = {
+                .binding = 0,
+                .location = 1,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, texcoord),
+            },
+        };
+
+        context->texture_pipeline = create_pipeline(context->logical_device.handle,
+                                                    context->renderpass,
+                                                    &context->swapchain,
+                                                    context->texture_vert_module,
+                                                    context->texture_frag_module,
+                                                    binding_description,
+                                                    attribute_descriptions,
+                                                    ARRLEN(attribute_descriptions),
+                                                    &context->descriptor_set_layout);
+    }
+
+    //{
+    //    VkVertexInputBindingDescription binding_description = {
+    //        .binding = 0,
+    //        .stride = sizeof(Vertex),
+    //        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    //    };
+
+    //    VkVertexInputAttributeDescription attribute_descriptions[] = {
+    //        [0] = {
+    //            .binding = 0,
+    //            .location = 0,
+    //            .format = VK_FORMAT_R32G32_SFLOAT,
+    //            .offset = offsetof(Vertex, pos),
+    //        },
+    //        [1] = {
+    //            .binding = 0,
+    //            .location = 1,
+    //            .format = VK_FORMAT_R32G32_SFLOAT,
+    //            .offset = offsetof(Vertex, texcoord),
+    //        },
+    //    };
+
+    //    context->atlas_pipeline = create_pipeline(context->logical_device.handle,
+    //                                                context->renderpass,
+    //                                                &context->swapchain,
+    //                                                context->atlas_vert_module,
+    //                                                context->atlas_frag_module,
+    //                                                binding_description,
+    //                                                attribute_descriptions,
+    //                                                ARRLEN(attribute_descriptions),
+    //                                                &context->descriptor_set_layout);
+    //}
 
     /* framebuffer */
     context->framebuffers = vkc_create_framebuffers(context->logical_device.handle, context->renderpass, &context->swapchain);
     context->framebuffer_count = context->swapchain.image_view_count;
 
     create_uniform_buffers(context->logical_device.handle, sizeof(struct uniform_buffer_object), context->uniform_buffers, context->uniform_buffers_memory, context->swapchain.image_count);
-    populate_descriptor_sets();
+
+    if (context->has_texture) {
+        populate_descriptor_sets();
+    }
 
     /* command buffer */
     context->command_buffers = vkc_create_command_buffers(context->logical_device.handle, context->command_pool, context->swapchain.image_count);
@@ -1497,47 +1478,139 @@ static inline void initialize_vulkan(Renderer *r) {
     createSwapchainImageViews(&context->logical_device, &context->swapchain);
     context->renderpass = vkc_create_renderpass(context->logical_device.handle, &context->swapchain);
 
-    u8 *vert_code = NULL;
-    u64 vert_code_size = 0;
-    platform.read_file_to_buffer("res/vert.vert.spv", &vert_code, &vert_code_size);
-    u8 *frag_code = NULL;
-    u64 frag_code_size = 0;
-    platform.read_file_to_buffer("res/frag.frag.spv", &frag_code, &frag_code_size);
-    VkShaderModule vert_module = vkc_create_shader_module(context->logical_device.handle, vert_code, vert_code_size);
-    VkShaderModule frag_module = vkc_create_shader_module(context->logical_device.handle, frag_code, frag_code_size);
-    platform.free_memory(vert_code);
-    platform.free_memory(frag_code);
+    {
+        u8 *vert_code = NULL;
+        u64 vert_code_size = 0;
+        platform.read_file_to_buffer("res/color.vert.spv", &vert_code, &vert_code_size);
+        context->color_vert_module = create_shader_module(context->logical_device.handle, vert_code, vert_code_size);
+        platform.free_memory(vert_code);
 
-    VkVertexInputBindingDescription binding_description = {
-        .binding = 0,
-        .stride = sizeof(struct vertex),
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-    };
+        u8 *frag_code = NULL;
+        u64 frag_code_size = 0;
+        platform.read_file_to_buffer("res/color.frag.spv", &frag_code, &frag_code_size);
+        context->color_frag_module = create_shader_module(context->logical_device.handle, frag_code, frag_code_size);
+        platform.free_memory(frag_code);
 
-    VkVertexInputAttributeDescription attribute_descriptions[2] = {
-        [0] = {
+        VkVertexInputBindingDescription binding_description = {
             .binding = 0,
-            .location = 0,
-            .format = VK_FORMAT_R32G32_SFLOAT,
-            .offset = offsetof(struct vertex, pos),
-        },
-        [1] = {
-            .binding = 0,
-            .location = 1,
-            .format = VK_FORMAT_R32G32_SFLOAT,
-            .offset = offsetof(struct vertex, texcoord),
-        },
-    };
+            .stride = sizeof(Vertex),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+
+        VkVertexInputAttributeDescription attribute_descriptions[] = {
+            [0] = {
+                .binding = 0,
+                .location = 0,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, pos),
+            },
+        };
+
+        context->color_pipeline = create_pipeline(context->logical_device.handle,
+                                                  context->renderpass,
+                                                  &context->swapchain,
+                                                  context->color_vert_module,
+                                                  context->color_frag_module,
+                                                  binding_description,
+                                                  attribute_descriptions,
+                                                  ARRLEN(attribute_descriptions),
+                                                  NULL);
+    }
 
     create_descriptor_set_layout(context->logical_device.handle, &context->descriptor_set_layout);
     create_descriptor_pool(context->logical_device.handle, context->swapchain.image_count, &context->descriptor_pool);
     context->descriptor_sets = platform.allocate_memory(sizeof(VkDescriptorSet) * context->swapchain.image_count);
     create_descriptor_sets(context->logical_device.handle, context->swapchain.image_count, &context->descriptor_pool, context->descriptor_set_layout, context->descriptor_sets);
 
-    context->pipeline = vkc_create_pipeline(context->logical_device.handle, context->renderpass, &context->swapchain, vert_module, frag_module, binding_description, attribute_descriptions, ARRLEN(attribute_descriptions), &context->descriptor_set_layout);
+    {
+        u8 *vert_code = NULL;
+        u64 vert_code_size = 0;
+        platform.read_file_to_buffer("res/texture.vert.spv", &vert_code, &vert_code_size);
+        context->texture_vert_module = create_shader_module(context->logical_device.handle, vert_code, vert_code_size);
+        platform.free_memory(vert_code);
 
-    vkDestroyShaderModule(context->logical_device.handle, vert_module, NULL);
-    vkDestroyShaderModule(context->logical_device.handle, frag_module, NULL);
+        u8 *frag_code = NULL;
+        u64 frag_code_size = 0;
+        platform.read_file_to_buffer("res/texture.frag.spv", &frag_code, &frag_code_size);
+        context->texture_frag_module = create_shader_module(context->logical_device.handle, frag_code, frag_code_size);
+        platform.free_memory(frag_code);
+
+        VkVertexInputBindingDescription binding_description = {
+            .binding = 0,
+            .stride = sizeof(Vertex),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+
+        VkVertexInputAttributeDescription attribute_descriptions[2] = {
+            [0] = {
+                .binding = 0,
+                .location = 0,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, pos),
+            },
+            [1] = {
+                .binding = 0,
+                .location = 1,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, texcoord),
+            },
+        };
+
+        context->texture_pipeline = create_pipeline(context->logical_device.handle,
+                                                    context->renderpass,
+                                                    &context->swapchain,
+                                                    context->texture_vert_module,
+                                                    context->texture_frag_module,
+                                                    binding_description,
+                                                    attribute_descriptions,
+                                                    ARRLEN(attribute_descriptions),
+                                                    &context->descriptor_set_layout);
+    }
+
+    {
+        u8 *vert_code = NULL;
+        u64 vert_code_size = 0;
+        platform.read_file_to_buffer("res/atlas.vert.spv", &vert_code, &vert_code_size);
+        context->atlas_vert_module = create_shader_module(context->logical_device.handle, vert_code, vert_code_size);
+        platform.free_memory(vert_code);
+
+        u8 *frag_code = NULL;
+        u64 frag_code_size = 0;
+        platform.read_file_to_buffer("res/atlas.frag.spv", &frag_code, &frag_code_size);
+        context->atlas_frag_module = create_shader_module(context->logical_device.handle, frag_code, frag_code_size);
+        platform.free_memory(frag_code);
+
+        VkVertexInputBindingDescription binding_description = {
+            .binding = 0,
+            .stride = sizeof(Vertex),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+
+        VkVertexInputAttributeDescription attribute_descriptions[2] = {
+            [0] = {
+                .binding = 0,
+                .location = 0,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, pos),
+            },
+            [1] = {
+                .binding = 0,
+                .location = 1,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, texcoord),
+            },
+        };
+
+        context->atlas_pipeline = create_pipeline(context->logical_device.handle,
+                                                  context->renderpass,
+                                                  &context->swapchain,
+                                                  context->atlas_vert_module,
+                                                  context->atlas_frag_module,
+                                                  binding_description,
+                                                  attribute_descriptions,
+                                                  ARRLEN(attribute_descriptions),
+                                                  &context->descriptor_set_layout);
+    }
 
     /* framebuffer */
     context->framebuffers = vkc_create_framebuffers(context->logical_device.handle, context->renderpass, &context->swapchain);
@@ -1551,11 +1624,7 @@ static inline void initialize_vulkan(Renderer *r) {
     context->uniform_buffers_memory = platform.allocate_memory(sizeof(VkDeviceMemory) * context->swapchain.image_count);
     create_uniform_buffers(context->logical_device.handle, sizeof(struct uniform_buffer_object), context->uniform_buffers, context->uniform_buffers_memory, context->swapchain.image_count);
 
-    createTextureImage();
-    createTextureImageView();
     createTextureSampler();
-
-    populate_descriptor_sets();
 
     /* Create sync primitives */
     {
@@ -1582,6 +1651,9 @@ static inline void initialize_vulkan(Renderer *r) {
                       "failed to create fence");
         }
     }
+
+    // NOTE(anjo): we do not have seperate vertices for the textured vs colored case.
+    //             The UV coord. are always passed.
 
     /* Copy buffer to GPU */
     {
@@ -1671,7 +1743,7 @@ void startup(Renderer *r) {
     setup_globals(r);
 
     initialize_vulkan(r);
-    initialize_fonts(r);
+    //initialize_fonts(r);
 
     platform.log(LOG_INFO, "Hello form start");
 }
@@ -1682,10 +1754,20 @@ void shutdown(Renderer *r) {
 
     cleanup_swapchain(r);
 
+    vkDestroyShaderModule(context->logical_device.handle, context->atlas_vert_module, NULL);
+    vkDestroyShaderModule(context->logical_device.handle, context->atlas_frag_module, NULL);
+    vkDestroyShaderModule(context->logical_device.handle, context->texture_vert_module, NULL);
+    vkDestroyShaderModule(context->logical_device.handle, context->texture_frag_module, NULL);
+    vkDestroyShaderModule(context->logical_device.handle, context->color_vert_module, NULL);
+    vkDestroyShaderModule(context->logical_device.handle, context->color_frag_module, NULL);
+
     vkDestroySampler(context->logical_device.handle, context->texture_sampler, NULL);
-    vkDestroyImageView(context->logical_device.handle, context->texture_image_view, NULL);
-    vkDestroyImage(context->logical_device.handle, context->texture_image, NULL);
-    vkFreeMemory(context->logical_device.handle, context->texture_image_memory, NULL);
+
+    if (context->has_texture) {
+        vkDestroyImageView(context->logical_device.handle, context->texture_image_view, NULL);
+        vkDestroyImage(context->logical_device.handle, context->texture_image, NULL);
+        vkFreeMemory(context->logical_device.handle, context->texture_image_memory, NULL);
+    }
 
     for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroySemaphore(context->logical_device.handle, context->sem_render_finished[i], NULL);
@@ -1759,12 +1841,8 @@ void end_frame(Renderer *r, RenderCommands *cmds) {
               "failed to start recording command buffer");
     pass_info.framebuffer = context->framebuffers[image_index];
     vkCmdBeginRenderPass(context->command_buffers[image_index], &pass_info, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(context->command_buffers[image_index], VK_PIPELINE_BIND_POINT_GRAPHICS, context->pipeline.handle);
-    VkBuffer vertex_buffers[] = {context->vertex_buffer};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(context->command_buffers[image_index], 0, 1, vertex_buffers, offsets);
-    vkCmdBindIndexBuffer(context->command_buffers[image_index], context->index_buffer, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdBindDescriptorSets(context->command_buffers[image_index], VK_PIPELINE_BIND_POINT_GRAPHICS, context->pipeline.layout, 0, 1, &context->descriptor_sets[image_index], 0, NULL);
+
+    // TODO(anjo): Move to separate queues for different pipelines?
 
     RenderEntryHeader *header = (RenderEntryHeader *) cmds->memory_base;
     while ((u8 *)header < cmds->memory_base + cmds->memory_top) {
@@ -1773,21 +1851,80 @@ void end_frame(Renderer *r, RenderCommands *cmds) {
             RenderEntryQuad *quad = (RenderEntryQuad *) header;
             header += sizeof(RenderEntryQuad);
 
-            /* update uniform buffers */
-            //struct uniform_buffer_object ubo = {0};
-            //v2AssignToArray(ubo.pos, quad->pos);
-            //colorRGBAssignToArray(ubo.col, quad->col);
-
-            //void *data;
-            //vkMapMemory(context->logical_device.handle, context->uniform_buffers_memory[image_index], 0, sizeof(ubo), 0, &data);
-            //memcpy(data, &ubo, sizeof(ubo));
-            //vkUnmapMemory(context->logical_device.handle, context->uniform_buffers_memory[image_index]);
+            vkCmdBindPipeline(context->command_buffers[image_index], VK_PIPELINE_BIND_POINT_GRAPHICS, context->color_pipeline.handle);
+            VkBuffer vertex_buffers[] = {context->vertex_buffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(context->command_buffers[image_index], 0, 1, vertex_buffers, offsets);
+            vkCmdBindIndexBuffer(context->command_buffers[image_index], context->index_buffer, 0, VK_INDEX_TYPE_UINT16);
 
             /* Draw quad */
             ShapePushConstants push = {0};
             v2AssignToArray(push.pos, quad->pos);
+            v2AssignToArray(push.scale, quad->scale);
             colorRGBAssignToArray(push.col, quad->col);
-            vkCmdPushConstants(context->command_buffers[image_index], context->pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShapePushConstants), &push);
+            vkCmdPushConstants(context->command_buffers[image_index], context->color_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShapePushConstants), &push);
+
+            vkCmdDrawIndexed(context->command_buffers[image_index], ARRLEN(indices), 1, 0, 0, 0);
+
+            break;
+        }
+        case ENTRY_TYPE_RenderEntryTexturedQuad: {
+            RenderEntryTexturedQuad *quad = (RenderEntryTexturedQuad *) header;
+            header += sizeof(RenderEntryTexturedQuad);
+
+            if (!context->has_texture) {
+                createTextureImage(&quad->image);
+                createTextureImageView();
+                populate_descriptor_sets();
+                context->has_texture = true;
+            }
+
+            vkCmdBindPipeline(context->command_buffers[image_index], VK_PIPELINE_BIND_POINT_GRAPHICS, context->texture_pipeline.handle);
+            VkBuffer vertex_buffers[] = {context->vertex_buffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(context->command_buffers[image_index], 0, 1, vertex_buffers, offsets);
+            vkCmdBindIndexBuffer(context->command_buffers[image_index], context->index_buffer, 0, VK_INDEX_TYPE_UINT16);
+
+            vkCmdBindDescriptorSets(context->command_buffers[image_index], VK_PIPELINE_BIND_POINT_GRAPHICS, context->texture_pipeline.layout, 0, 1, &context->descriptor_sets[image_index], 0, NULL);
+
+            /* Draw quad */
+            ShapePushConstants push = {0};
+            v2AssignToArray(push.pos, quad->pos);
+            v2AssignToArray(push.scale, quad->scale);
+            //colorRGBAssignToArray(push.col, quad->col);
+            vkCmdPushConstants(context->command_buffers[image_index], context->texture_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShapePushConstants), &push);
+
+            vkCmdDrawIndexed(context->command_buffers[image_index], ARRLEN(indices), 1, 0, 0, 0);
+
+            break;
+        }
+        case ENTRY_TYPE_RenderEntryAtlasQuad: {
+            RenderEntryAtlasQuad *quad = (RenderEntryAtlasQuad *) header;
+            header += sizeof(RenderEntryAtlasQuad);
+
+            if (!context->has_texture) {
+                createTextureImage(&quad->image);
+                createTextureImageView();
+                populate_descriptor_sets();
+                context->has_texture = true;
+            }
+
+            vkCmdBindPipeline(context->command_buffers[image_index], VK_PIPELINE_BIND_POINT_GRAPHICS, context->atlas_pipeline.handle);
+            VkBuffer vertex_buffers[] = {context->vertex_buffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(context->command_buffers[image_index], 0, 1, vertex_buffers, offsets);
+            vkCmdBindIndexBuffer(context->command_buffers[image_index], context->index_buffer, 0, VK_INDEX_TYPE_UINT16);
+
+            vkCmdBindDescriptorSets(context->command_buffers[image_index], VK_PIPELINE_BIND_POINT_GRAPHICS, context->atlas_pipeline.layout, 0, 1, &context->descriptor_sets[image_index], 0, NULL);
+
+            /* Draw quad */
+            ShapePushConstants push = {0};
+            v2AssignToArray(push.pos, quad->pos);
+            v2AssignToArray(push.scale, quad->scale);
+            v2AssignToArray(push.offset, quad->offset);
+            v2AssignToArray(push.size, quad->size);
+            //colorRGBAssignToArray(push.col, quad->col);
+            vkCmdPushConstants(context->command_buffers[image_index], context->atlas_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShapePushConstants), &push);
 
             vkCmdDrawIndexed(context->command_buffers[image_index], ARRLEN(indices), 1, 0, 0, 0);
 

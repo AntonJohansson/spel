@@ -21,6 +21,14 @@ static inline Vec2 v2Add(Vec2 a, Vec2 b) {
     return VEC2(a.x + b.x, a.y + b.y);
 }
 
+static inline Vec2 v2Sub(Vec2 a, Vec2 b) {
+    return VEC2(a.x - b.x, a.y - b.y);
+}
+
+static inline Vec2 v2Scale(f32 f, Vec2 v) {
+    return VEC2(f*v.x, f*v.y);
+}
+
 static inline void v2AssignToArray(f32 *arr, Vec2 v) {
     arr[0] = v.x;
     arr[1] = v.y;
