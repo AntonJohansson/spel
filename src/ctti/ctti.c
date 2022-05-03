@@ -9,8 +9,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 
-#include "third_party/sds.h"
-#include "third_party/sds.c"
+#include <third_party/sds.h>
 
 #define CBEGIN "\033["
 #define CEND   "m"

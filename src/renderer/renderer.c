@@ -132,9 +132,15 @@ typedef struct ShapePushConstants {
     f32 pos[2];
     f32 scale[2];
     f32 col[3];
+} ShapePushConstants;
+
+typedef struct AtlasPushConstants {
+    f32 pos[2];
+    f32 scale[2];
     f32 offset[2];
     f32 size[2];
-} ShapePushConstants;
+    f32 col[3];
+} AtlasPushConstants;
 
 /* vertex buffer */
 
@@ -1039,23 +1045,18 @@ VkShaderModule create_shader_module(VkDevice device, const char *code, u64 code_
     return shader_module;
 }
 
-struct vkc_pipeline create_pipeline(VkDevice device, VkRenderPass renderpass, Swapchain *swapchain, VkShaderModule vert_module, VkShaderModule frag_module, VkVertexInputBindingDescription vertex_binding_desc, VkVertexInputAttributeDescription* vertex_attrib_desc, u32 attrib_count, VkDescriptorSetLayout *descriptor_set_layout) {
+struct vkc_pipeline create_pipeline(VkDevice device, VkRenderPass renderpass, Swapchain *swapchain, VkShaderModule vert_module, VkShaderModule frag_module, VkVertexInputBindingDescription vertex_binding_desc, VkVertexInputAttributeDescription* vertex_attrib_desc, u32 attrib_count, VkDescriptorSetLayout *descriptor_set_layout, VkPushConstantRange *push_constant) {
 
     // Create the pipeline layout
 
-    VkPushConstantRange push_constant = {
-        .offset = 0,
-        .size = sizeof(ShapePushConstants),
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-    };
-
     const u32 set_layout_count = (descriptor_set_layout != NULL) ? 1 : 0;
+    const u32 push_count = (push_constant != NULL) ? 1 : 0;
     VkPipelineLayoutCreateInfo pipeline_layout_info = {
         .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount         = set_layout_count,
         .pSetLayouts            = descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges    = &push_constant,
+        .pushConstantRangeCount = push_count,
+        .pPushConstantRanges    = push_constant,
     };
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VKC_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, NULL, &layout),
@@ -1143,12 +1144,12 @@ struct vkc_pipeline create_pipeline(VkDevice device, VkRenderPass renderpass, Sw
                              | VK_COLOR_COMPONENT_G_BIT
                              | VK_COLOR_COMPONENT_B_BIT
                              | VK_COLOR_COMPONENT_A_BIT,
-        .blendEnable         = VK_FALSE,
-        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .blendEnable         = VK_TRUE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
         .colorBlendOp        = VK_BLEND_OP_ADD,
-        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
         .alphaBlendOp        = VK_BLEND_OP_ADD,
     };
 
@@ -1345,6 +1346,12 @@ static void recreate_swapchain(Renderer *r) {
             },
         };
 
+        VkPushConstantRange push_constant = {
+            .offset = 0,
+            .size = sizeof(ShapePushConstants),
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        };
+
         context->color_pipeline = create_pipeline(context->logical_device.handle,
                                                   context->renderpass,
                                                   &context->swapchain,
@@ -1353,7 +1360,8 @@ static void recreate_swapchain(Renderer *r) {
                                                   binding_description,
                                                   attribute_descriptions,
                                                   ARRLEN(attribute_descriptions),
-                                                  NULL);
+                                                  NULL,
+                                                  &push_constant);
     }
 
     create_descriptor_pool(context->logical_device.handle, context->swapchain.image_count, &context->descriptor_pool);
@@ -1383,6 +1391,12 @@ static void recreate_swapchain(Renderer *r) {
             },
         };
 
+        VkPushConstantRange push_constant = {
+            .offset = 0,
+            .size = sizeof(ShapePushConstants),
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        };
+
         context->texture_pipeline = create_pipeline(context->logical_device.handle,
                                                     context->renderpass,
                                                     &context->swapchain,
@@ -1391,41 +1405,49 @@ static void recreate_swapchain(Renderer *r) {
                                                     binding_description,
                                                     attribute_descriptions,
                                                     ARRLEN(attribute_descriptions),
-                                                    &context->descriptor_set_layout);
+                                                    &context->descriptor_set_layout,
+                                                    &push_constant);
     }
 
-    //{
-    //    VkVertexInputBindingDescription binding_description = {
-    //        .binding = 0,
-    //        .stride = sizeof(Vertex),
-    //        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-    //    };
+    {
+        VkVertexInputBindingDescription binding_description = {
+            .binding = 0,
+            .stride = sizeof(Vertex),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
 
-    //    VkVertexInputAttributeDescription attribute_descriptions[] = {
-    //        [0] = {
-    //            .binding = 0,
-    //            .location = 0,
-    //            .format = VK_FORMAT_R32G32_SFLOAT,
-    //            .offset = offsetof(Vertex, pos),
-    //        },
-    //        [1] = {
-    //            .binding = 0,
-    //            .location = 1,
-    //            .format = VK_FORMAT_R32G32_SFLOAT,
-    //            .offset = offsetof(Vertex, texcoord),
-    //        },
-    //    };
+        VkVertexInputAttributeDescription attribute_descriptions[] = {
+            [0] = {
+                .binding = 0,
+                .location = 0,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, pos),
+            },
+            [1] = {
+                .binding = 0,
+                .location = 1,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, texcoord),
+            },
+        };
 
-    //    context->atlas_pipeline = create_pipeline(context->logical_device.handle,
-    //                                                context->renderpass,
-    //                                                &context->swapchain,
-    //                                                context->atlas_vert_module,
-    //                                                context->atlas_frag_module,
-    //                                                binding_description,
-    //                                                attribute_descriptions,
-    //                                                ARRLEN(attribute_descriptions),
-    //                                                &context->descriptor_set_layout);
-    //}
+        VkPushConstantRange push_constant = {
+            .offset = 0,
+            .size = sizeof(AtlasPushConstants),
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        };
+
+        context->atlas_pipeline = create_pipeline(context->logical_device.handle,
+                                                    context->renderpass,
+                                                    &context->swapchain,
+                                                    context->atlas_vert_module,
+                                                    context->atlas_frag_module,
+                                                    binding_description,
+                                                    attribute_descriptions,
+                                                    ARRLEN(attribute_descriptions),
+                                                    &context->descriptor_set_layout,
+                                                    &push_constant);
+    }
 
     /* framebuffer */
     context->framebuffers = vkc_create_framebuffers(context->logical_device.handle, context->renderpass, &context->swapchain);
@@ -1506,6 +1528,13 @@ static inline void initialize_vulkan(Renderer *r) {
             },
         };
 
+
+        VkPushConstantRange push_constant = {
+            .offset = 0,
+            .size = sizeof(ShapePushConstants),
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        };
+
         context->color_pipeline = create_pipeline(context->logical_device.handle,
                                                   context->renderpass,
                                                   &context->swapchain,
@@ -1514,7 +1543,8 @@ static inline void initialize_vulkan(Renderer *r) {
                                                   binding_description,
                                                   attribute_descriptions,
                                                   ARRLEN(attribute_descriptions),
-                                                  NULL);
+                                                  NULL,
+                                                  &push_constant);
     }
 
     create_descriptor_set_layout(context->logical_device.handle, &context->descriptor_set_layout);
@@ -1556,6 +1586,12 @@ static inline void initialize_vulkan(Renderer *r) {
             },
         };
 
+        VkPushConstantRange push_constant = {
+            .offset = 0,
+            .size = sizeof(ShapePushConstants),
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        };
+
         context->texture_pipeline = create_pipeline(context->logical_device.handle,
                                                     context->renderpass,
                                                     &context->swapchain,
@@ -1564,7 +1600,8 @@ static inline void initialize_vulkan(Renderer *r) {
                                                     binding_description,
                                                     attribute_descriptions,
                                                     ARRLEN(attribute_descriptions),
-                                                    &context->descriptor_set_layout);
+                                                    &context->descriptor_set_layout,
+                                                    &push_constant);
     }
 
     {
@@ -1601,6 +1638,12 @@ static inline void initialize_vulkan(Renderer *r) {
             },
         };
 
+        VkPushConstantRange push_constant = {
+            .offset = 0,
+            .size = sizeof(AtlasPushConstants),
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        };
+
         context->atlas_pipeline = create_pipeline(context->logical_device.handle,
                                                   context->renderpass,
                                                   &context->swapchain,
@@ -1609,7 +1652,8 @@ static inline void initialize_vulkan(Renderer *r) {
                                                   binding_description,
                                                   attribute_descriptions,
                                                   ARRLEN(attribute_descriptions),
-                                                  &context->descriptor_set_layout);
+                                                  &context->descriptor_set_layout,
+                                                  &push_constant);
     }
 
     /* framebuffer */
@@ -1744,8 +1788,6 @@ void startup(Renderer *r) {
 
     initialize_vulkan(r);
     //initialize_fonts(r);
-
-    platform.log(LOG_INFO, "Hello form start");
 }
 
 void shutdown(Renderer *r) {
@@ -1791,7 +1833,6 @@ void shutdown(Renderer *r) {
     vkDestroyDevice(context->logical_device.handle, NULL);
     vkDestroySurfaceKHR(context->instance, context->surface, NULL);
     vkDestroyInstance(context->instance, NULL);
-    platform.log(LOG_INFO, "Hello form shutdown");
 }
 
 RenderCommands *begin_frame(Renderer *r) {
@@ -1918,15 +1959,54 @@ void end_frame(Renderer *r, RenderCommands *cmds) {
             vkCmdBindDescriptorSets(context->command_buffers[image_index], VK_PIPELINE_BIND_POINT_GRAPHICS, context->atlas_pipeline.layout, 0, 1, &context->descriptor_sets[image_index], 0, NULL);
 
             /* Draw quad */
-            ShapePushConstants push = {0};
+            AtlasPushConstants push = {0};
             v2AssignToArray(push.pos, quad->pos);
             v2AssignToArray(push.scale, quad->scale);
             v2AssignToArray(push.offset, quad->offset);
             v2AssignToArray(push.size, quad->size);
-            //colorRGBAssignToArray(push.col, quad->col);
-            vkCmdPushConstants(context->command_buffers[image_index], context->atlas_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShapePushConstants), &push);
+            colorRGBAssignToArray(push.col, quad->col);
+            vkCmdPushConstants(context->command_buffers[image_index], context->atlas_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(AtlasPushConstants), &push);
 
             vkCmdDrawIndexed(context->command_buffers[image_index], ARRLEN(indices), 1, 0, 0, 0);
+
+            break;
+        }
+        case ENTRY_TYPE_RenderEntryText: {
+            RenderEntryText *entry = (RenderEntryText *) header;
+            header += sizeof(RenderEntryText);
+
+            Vec2 pos = entry->pos;
+
+            for (const char *p = entry->text; *p; ++p) {
+
+                PackRect *rect = NULL;
+                for (u32 i = 0; i < NUM_CHARS; ++i) {
+                    if (r->font_map[i].user_id == *p) {
+                        rect = &r->font_map[i];
+                        break;
+                    }
+                }
+
+                FontInfo *info = NULL;
+                for (u32 i = 0; i < NUM_CHARS; ++i) {
+                    if (r->font_info[i].codepoint == *p) {
+                        info = &r->font_info[i];
+                        break;
+                    }
+                }
+
+                if (rect) {
+                    pushAtlasQuad(cmds,
+                                  VEC2(pos.x + 2.0f*(info->offset_x)/800.0f, pos.y - 2.0f*(info->offset_y)/600.0f),
+                                  VEC2(2.0f*rect->width/800.0f, 2.0f*rect->height/600.0f),
+                                  *r->font_atlas,
+                                  VEC2(rect->x/(f32)r->font_atlas->width,     rect->y/(f32)r->font_atlas->height),
+                                  VEC2(rect->width/(f32)r->font_atlas->width, rect->height/(f32)r->font_atlas->height),
+                                  entry->col
+                                  );
+                    pos.x += 2.0*(f32)(info->advance >> 6)/800.0f;
+                }
+            }
 
             break;
         }

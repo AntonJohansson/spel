@@ -17,11 +17,6 @@ void  platformMemoryFreePages(void *ptr, u64 num_pages);
 void *platformMemoryAllocate(u64 size);
 void  platformMemoryFree(void *mem);
 
-/* File */
-typedef struct File {
-    void *fd;
-} File;
-
 void  platformFileSetSearchDir(sds dir);
 File  platformFileOpen(const char *path, const char *mode);
 void  platformFileClose(File file);
@@ -30,12 +25,6 @@ void  platformFileReadToBuffer(const char *path, u8 **buffer, u64 *size);
 void  platformFileWrite(File file, void *ptr, u64 size, u64 amount);
 void  platformFileRead(File file, void *ptr, u64 size, u64 amount);
 u64   platformFileLastModify(const char *path);
-
-/* Time */
-typedef struct Time {
-    u64 seconds;
-    u64 nanoseconds;
-} Time;
 
 Time platformTimeCurrent();
 Time platformTimeSubtract(Time t0, Time t1);

@@ -6,6 +6,7 @@ CTTI := $(BUILDDIR)/ctti
 LOADER := $(BUILDDIR)/loader
 RENDERER := $(BUILDDIR)/librenderer
 GAME := $(BUILDDIR)/libgame
+DEBUG := $(BUILDDIR)/libdebug
 
 SHADER_SRCS = $(RESDIR)/color.vert \
 	      $(RESDIR)/color.frag \
@@ -20,19 +21,22 @@ COMMON_FLAGS := -I src/include -g -MMD
 include $(wildcard $(BUILDDIR)/*.d)
 
 .DEFAULT_GOAL := all
-all: $(BUILDDIR) $(CTTI) $(RENDERER) $(GAME) $(LOADER) $(SHADER_SPVS)
+all: $(BUILDDIR) $(CTTI) $(RENDERER) $(GAME) $(DEBUG) $(LOADER) $(SHADER_SPVS)
 
-$(CTTI): src/ctti/ctti.c
-	$(CC) -o $@ src/ctti/ctti.c $(COMMON_FLAGS)
+$(CTTI): src/ctti/ctti.c src/include/third_party/sds.c
+	$(CC) -o $@ $^ $(COMMON_FLAGS)
 
-$(LOADER): src/loader/loader.c
-	$(CC) -o $@ src/loader/loader.c $(COMMON_FLAGS) -ldl -lpthread -lglfw -lfreetype -I/usr/include/freetype2
+$(LOADER): src/loader/loader.c src/include/third_party/sds.c src/include/third_party/sds.h
+	$(CC) -o $@ $^ $(COMMON_FLAGS) -ldl -lpthread -lglfw -lm -lfreetype -I/usr/include/freetype2
 
-$(RENDERER): src/renderer/renderer.c
-	$(CC) -o $@ src/renderer/renderer.c -lvulkan -lpthread  -lfreetype -I/usr/include/freetype2 $(COMMON_FLAGS) $(LIB_FLAGS)
+$(RENDERER): src/renderer/renderer.c src/include/third_party/sds.c src/include/third_party/sds.h
+	$(CC) -o $@ $^ -lvulkan -lpthread  -lfreetype -I/usr/include/freetype2 $(COMMON_FLAGS) $(LIB_FLAGS)
 
-$(GAME): src/game/game.c
-	$(CC) -o $@ src/game/game.c -lfreetype -I/usr/include/freetype2 $(COMMON_FLAGS) $(LIB_FLAGS)
+$(GAME): src/game/game.c src/include/third_party/sds.c src/include/third_party/sds.h
+	$(CC) -o $@ $^ -lfreetype -I/usr/include/freetype2 $(COMMON_FLAGS) $(LIB_FLAGS)
+
+$(DEBUG): src/debug/debug.c src/include/third_party/sds.c src/include/third_party/sds.h
+	$(CC) -o $@ $^ -lfreetype -I/usr/include/freetype2 $(COMMON_FLAGS) $(LIB_FLAGS)
 
 %.spv: %
 	$(GLSLC) -V -o $@ $^

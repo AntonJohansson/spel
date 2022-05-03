@@ -1,6 +1,6 @@
+
 /* external */
 #include <GLFW/glfw3.h>
-#include "third_party/sds.c"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -20,16 +20,32 @@
  * Function tables
  */
 
-typedef struct Input Input;
+/* Game */
 typedef void GameUpdateFunc(f32, GameMemory *, Input *, RenderCommands *);
 
 typedef struct GameFunctionTable {
     GameUpdateFunc *update;
 } GameFunctionTable;
+
 static char *game_function_names[] = {
     "update"
 };
 
+/* Debug */
+typedef void DebugPreUpdateFunc(f32, DebugMemory *, Input *, RenderCommands *);
+typedef void DebugPostUpdateFunc(f32, DebugMemory *, Input *, RenderCommands *);
+
+typedef struct DebugFunctionTable {
+    DebugPreUpdateFunc  *pre_update;
+    DebugPostUpdateFunc *post_update;
+} DebugFunctionTable;
+
+static char *debug_function_names[] = {
+    "pre_update",
+    "post_update"
+};
+
+/* Renderer */
 typedef void RendererStartupFunc(Renderer *);
 typedef void RendererShutdownFunc(Renderer *);
 typedef RenderCommands *RendererBeginFrameFunc(Renderer *);
@@ -41,6 +57,7 @@ typedef struct RendererFunctionTable {
     RendererBeginFrameFunc  *begin_frame;
     RendererEndFrameFunc    *end_frame;
 } RendererFunctionTable;
+
 static char *renderer_function_names[] = {
     "startup",
     "shutdown",
@@ -113,41 +130,9 @@ static inline void reloadCodeModuleIfNeeded(CodeModule *module) {
     }
 }
 
-/* Debug */
-
-typedef enum RecordState {
-    IDLE,
-    RECORDING,
-    REPLAYING,
-} RecordState;
-
-typedef struct RecordData {
-    Input input;
-    GameMemory game_memory;
-} RecordData;
-
-typedef struct DebugState {
-    RecordState record_state;
-    File record_file;
-    bool is_record_file_open;
-
-    u64 replay_index;
-    u64 replay_count;
-
-    RecordData *replay_memory;
-
-    GameMemory replay_old_memory;
-    Input replay_old_input;
-} DebugState;
-
-/* Frame */
-typedef struct FrameInfo {
-    u64 total_frame_count;
-    Time start_time;
-    Time end_time;
-    Time elapsed_time;
-    Time desired_time;
-} FrameInfo;
+/*
+ * Frame
+ */
 
 static inline void beginFrame(FrameInfo *frame_info) {
     frame_info->start_time = platformTimeCurrent();
@@ -165,7 +150,69 @@ static inline void endFrame(FrameInfo *frame_info) {
     frame_info->total_frame_count++;
 }
 
-/* Main */
+static void load_font_atlas(FT_Face face, uint32_t font_size, Image *image, PackRect **font_map, FontInfo **font_info) {
+
+    *font_map = platformMemoryAllocate(NUM_CHARS*sizeof(PackRect));
+    *font_info = platformMemoryAllocate(NUM_CHARS*sizeof(FontInfo));
+
+    /* Load font rects */
+    for (u8 i = 0; i < NUM_CHARS; ++i) {
+        FT_UInt glyph_index = FT_Get_Char_Index(face, i);
+        if (FT_Load_Char(face, glyph_index, FT_LOAD_BITMAP_METRICS_ONLY)) {
+            platformLog(LOG_ERROR, "FreeType: Could not load glyph for character: %c", i);
+            return;
+        }
+
+        (*font_map)[i].width = face->glyph->bitmap.width;
+        (*font_map)[i].height = face->glyph->bitmap.rows;
+        (*font_map)[i].user_id = glyph_index;
+
+        (*font_info)[i].codepoint = glyph_index;
+        (*font_info)[i].advance   = face->glyph->advance.x;
+        (*font_info)[i].offset_x  = face->glyph->bitmap_left;
+        (*font_info)[i].offset_y  = face->glyph->bitmap_top;
+    }
+
+    const u32 pack_width = sqrt(font_size*font_size*NUM_CHARS);
+    const u32 pack_height = pack_width;
+    PackNode nodes[pack_width+2];
+    PackContext pack_context = {
+        .width = pack_width,
+        .height = pack_height,
+        .num_nodes = pack_width + 2,
+        .nodes = nodes,
+    };
+    pack_rectangles(&pack_context, *font_map, NUM_CHARS);
+
+    u8 pack_pixels[pack_width*pack_height];
+    memset(pack_pixels, 0, pack_width*pack_height*sizeof(u8));
+    for (u8 i = 0; i < NUM_CHARS; ++i) {
+        u8 index = (*font_map)[i].user_id;
+        if (FT_Load_Char(face, index, FT_LOAD_RENDER)) {
+            platformLog(LOG_ERROR, "FreeType: Could not load glyph for character: %c", i);
+            return;
+        }
+        if ((*font_map)[i].width > 0 && (*font_map)[i].height > 0) {
+            for (u32 y = 0; y < (*font_map)[i].height; ++y) {
+                for (u32 x = 0; x < (*font_map)[i].width; ++x) {
+                    pack_pixels[((*font_map)[i].y + y)*pack_width + (*font_map)[i].x + x] = face->glyph->bitmap.buffer[y*(*font_map)[i].width + x];
+                }
+            }
+        }
+    }
+
+    image->pixels = platformMemoryAllocate(pack_width*pack_height*sizeof(u8));
+    image->width = pack_width;
+    image->height = pack_height;
+    image->channels = 1;
+
+    memcpy(image->pixels, pack_pixels, pack_width*pack_height*sizeof(u8));
+}
+
+/*
+ * Main
+ */
+
 int main(int argc, char **argv) {
     (void)argc;
 
@@ -186,11 +233,23 @@ int main(int argc, char **argv) {
     sds game_path = sdsnew(dir);
     game_path = sdscat(game_path, "/libgame");
 
+    sds debug_path = sdsnew(dir);
+    debug_path = sdscat(debug_path, "/libdebug");
+
     sds renderer_path = sdsnew(dir);
     renderer_path = sdscat(renderer_path, "/librenderer");
 
-    /* Debug */
-    DebugState debug_state = {0};
+    /* Frame info */
+    FrameInfo frame_info = {
+        .total_frame_count = 0,
+        .start_time = platformTimeCurrent(),
+        .end_time = {},
+        .elapsed_time = {},
+        .desired_time = {
+            .seconds = 0,
+            .nanoseconds = (1.0f/60.0f) * 1000000000.0f,
+        },
+    };
 
     /* Code Module */
     GameFunctionTable game_functions = {0};
@@ -202,6 +261,16 @@ int main(int argc, char **argv) {
         .function_names = game_function_names,
     };
     loadCodeModule(&game_module);
+
+    DebugFunctionTable debug_functions = {0};
+    CodeModule debug_module = {
+        .path = debug_path,
+        .last_modify_time = platformFileLastModify(debug_path),
+        .function_count = ARRLEN(debug_function_names),
+        .functions = (void **) &debug_functions,
+        .function_names = debug_function_names,
+    };
+    loadCodeModule(&debug_module);
 
     RendererFunctionTable renderer_functions = {0};
     CodeModule renderer_module = {
@@ -215,22 +284,84 @@ int main(int argc, char **argv) {
 
     PlatformFunctionTable platform_functions = {
         .log = platformLog,
+
         .allocate_memory = platformMemoryAllocate,
         .free_memory = platformMemoryFree,
+
+        .file_open = platformFileOpen,
+        .file_close = platformFileClose,
+        .file_size = platformFileSize,
         .read_file_to_buffer = platformFileReadToBuffer,
+        .file_write = platformFileWrite,
+        .file_read = platformFileRead,
+
         .abort = platformAbort,
     };
 
     GameMemory game_memory = {
         .platform = platform_functions,
+        .frame_info = &frame_info,
     };
 
+    DebugMemory debug_memory = {
+        .platform = platform_functions,
+        .frame_info = &frame_info,
+        .active_game_memory = &game_memory,
+        .active_game_input = &global_frame_input,
+    };
 
     Renderer renderer = {
         .platform = platform_functions,
+        .frame_info = &frame_info,
     };
 
     RenderCommands *frame = NULL;
+
+    /* Load font */
+
+    FT_Library ft;
+    if (FT_Init_FreeType(&ft)) {
+        platformLog(LOG_ERROR, "FreeType: Could not init!");
+        return 1;
+    }
+
+    u8 *font = NULL;
+    u64 file_size = 0;
+    platformFileReadToBuffer("res/fonts/lmmono12-regular.otf", &font, &file_size);
+
+    FT_Open_Args args = {
+        .flags = FT_OPEN_MEMORY,
+        .memory_base = font,
+        .memory_size = file_size,
+        .pathname = NULL,
+        .stream = 0,
+        .driver = NULL,
+        .num_params = 0,
+        .params = NULL,
+    };
+
+    FT_Face face;
+    if (FT_Open_Face(ft, &args, 0, &face)) {
+        platformLog(LOG_ERROR, "FreeType: Could not open face!");
+        return 2;
+    }
+
+    platformMemoryFree(font);
+
+    uint32_t font_size = 60;
+    FT_Set_Pixel_Sizes(face, 0, font_size);
+
+    Image font_atlas;
+    PackRect *font_map;
+    FontInfo *font_info;
+    load_font_atlas(face, font_size, &font_atlas, &font_map, &font_info);
+    assert(font_map);
+
+    renderer.font_map = font_map;
+    renderer.font_atlas = &font_atlas;
+    renderer.font_info = font_info;
+
+    /* glfw init */
 
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -240,103 +371,34 @@ int main(int argc, char **argv) {
 
     set_glfw_input_callbacks(renderer.window);
 
+    /* startup modules */
+
     if (renderer_functions.startup) {
         renderer_functions.startup(&renderer);
     }
-
-    FrameInfo frame_info = {
-        .total_frame_count = 0,
-        .start_time = platformTimeCurrent(),
-        .end_time = {},
-        .elapsed_time = {},
-        .desired_time = {
-            .seconds = 0,
-            .nanoseconds = (1.0f/60.0f) * 1000000000.0f,
-        },
-    };
-
-    platformLog(LOG_INFO, "Desired frame time: %llu ns", frame_info.desired_time.nanoseconds);
 
     while (!glfwWindowShouldClose(renderer.window)) {
         beginFrame(&frame_info);
         glfwPollEvents();
 
-        /* Recording input */
-        if (global_debug_frame_input.active[DEBUG_INPUT_RECORD_START]) {
-            if (debug_state.record_state == IDLE) {
-                platformLog(LOG_INFO, "Starting recording");
-                debug_state.record_state = RECORDING;
-            }
-        }
-        if (global_debug_frame_input.active[DEBUG_INPUT_RECORD_STOP]) {
-            if (debug_state.record_state == RECORDING) {
-                platformLog(LOG_INFO, "Stopping recording");
-                debug_state.record_state = IDLE;
-            }
-        }
-        if (global_debug_frame_input.active[DEBUG_INPUT_REPLAY_START]) {
-            if (debug_state.record_state == IDLE) {
-                platformLog(LOG_INFO, "Starting replay");
-                debug_state.record_state = REPLAYING;
-            }
-        }
-        if (global_debug_frame_input.active[DEBUG_INPUT_REPLAY_STOP]) {
-            if (debug_state.record_state == REPLAYING) {
-                platformLog(LOG_INFO, "Stopping replay");
-                debug_state.record_state = IDLE;
-                memcpy(&game_memory, &debug_state.replay_old_memory, sizeof(GameMemory));
-                memcpy(&global_frame_input, &debug_state.replay_old_input, sizeof(Input));
-            }
-        }
-
-        /* Handle recording of input */
-        if (!debug_state.is_record_file_open && (debug_state.record_state == RECORDING || debug_state.record_state == REPLAYING)) {
-            const char *mode = (debug_state.record_state == RECORDING) ? "w" : "r";
-            debug_state.record_file = platformFileOpen("input_recording", mode);
-            debug_state.is_record_file_open = true;
-            platformLog(LOG_INFO, "opening fd");
-        }
-        if (debug_state.record_state == RECORDING) {
-            RecordData r;
-            memcpy(&r.input, &global_frame_input, sizeof(Input));
-            memcpy(&r.game_memory, &game_memory, sizeof(GameMemory));
-            platformFileWrite(debug_state.record_file, &r, sizeof(RecordData), 1);
-        } else if (debug_state.record_state == REPLAYING) {
-            if (!debug_state.replay_memory) {
-                u64 file_size = platformFileSize(debug_state.record_file);
-                u64 item_size = sizeof(RecordData);
-                debug_state.replay_count = file_size/item_size;
-                debug_state.replay_memory = platformMemoryAllocate(file_size);
-                platformFileRead(debug_state.record_file, debug_state.replay_memory, file_size, 1);
-
-                memcpy(&debug_state.replay_old_memory, &game_memory, sizeof(GameMemory));
-                memcpy(&debug_state.replay_old_input, &global_frame_input, sizeof(Input));
-            }
-
-            memcpy(&global_frame_input, &debug_state.replay_memory[debug_state.replay_index].input, sizeof(Input));
-            memcpy(&game_memory, &debug_state.replay_memory[debug_state.replay_index].game_memory, sizeof(GameMemory));
-            debug_state.replay_index = (debug_state.replay_index + 1) % debug_state.replay_count;
-            platformLog(LOG_INFO, "Replay frame: %llu/%llu", debug_state.replay_index, debug_state.replay_count);
-        } else if (debug_state.record_state == IDLE && debug_state.is_record_file_open) {
-            platformLog(LOG_INFO, "closing fd");
-            platformFileClose(debug_state.record_file);
-            debug_state.is_record_file_open = false;
-            if (debug_state.replay_memory) {
-                platformMemoryFree(debug_state.replay_memory);
-            }
-        }
-
         /* Call out to game modules */
         if (renderer_functions.begin_frame) {
             frame = renderer_functions.begin_frame(&renderer);
         }
+        if (debug_functions.pre_update) {
+            debug_functions.pre_update((1.0f/60.0f), &debug_memory, &global_debug_frame_input, frame);
+        }
         if (game_functions.update) {
             game_functions.update((1.0f/60.0f), &game_memory, &global_frame_input, frame);
+        }
+        if (debug_functions.post_update) {
+            debug_functions.post_update((1.0f/60.0f), &debug_memory, &global_debug_frame_input, frame);
         }
         if (renderer_functions.end_frame) {
             renderer_functions.end_frame(&renderer, frame);
         }
 
+        reloadCodeModuleIfNeeded(&debug_module);
         reloadCodeModuleIfNeeded(&game_module);
         reloadCodeModuleIfNeeded(&renderer_module);
 
@@ -347,9 +409,13 @@ int main(int argc, char **argv) {
         renderer_functions.shutdown(&renderer);
     }
 
+    platformMemoryFree(font_map);
+    platformMemoryFree(font_atlas.pixels);
+
     glfwDestroyWindow(renderer.window);
     glfwTerminate();
 
+    unloadCodeModule(&debug_module);
     unloadCodeModule(&game_module);
     unloadCodeModule(&renderer_module);
 

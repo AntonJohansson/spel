@@ -1,0 +1,16 @@
+- Recording
+    - Why doesn't rerecording overwrite?
+
+- Font rendering
+    - Currently the "RenderEntryText" render command gets converted to a "RenderEntryQuadAtlas"
+      when the render commands are processed. It gets pushed to the back of the render queue.
+      Therefore text will always appear last and draw over everything else.
+
+- pushTextFmt
+    - In the works.
+
+- platform API
+    - Do we want to abstract this as a separate static lib?
+        - A "shared" static lib similarly to what we had previously
+        - How do we deal with the temporary stack? This would ideally be owned
+          by the loader, how would this work with a static lib?
