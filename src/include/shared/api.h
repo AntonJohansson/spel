@@ -6,8 +6,8 @@
 #include <shared/pack_rectangles.h>
 #include <third_party/sds.h>
 
-#include <ft2build.h>
-#include FT_FREETYPE_H
+//#include <ft2build.h>
+//#include FT_FREETYPE_H
 
 #define NUM_CHARS 128
 
@@ -236,16 +236,16 @@ static inline void pushText(RenderCommands *cmds, Vec2 pos, ColorRGB col, const 
 }
 
 static inline void pushTextFmt(RenderCommands *cmds, Vec2 pos, ColorRGB col, const char *fmt, ...) {
-    RenderEntryText *entry = PUSH_RENDER_ENTRY(cmds, RenderEntryText);
-    entry->pos  = pos;
-    entry->text = text;
-    entry->col = col;
+    //RenderEntryText *entry = PUSH_RENDER_ENTRY(cmds, RenderEntryText);
+    //entry->pos  = pos;
+    //entry->text = text;
+    //entry->col = col;
 
-    sds text;
-    sds sdscatfmt(sds s, char const *fmt, ...);
+    //sds text;
+    //sds sdscatfmt(sds s, char const *fmt, ...);
 
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(fd, fmt, args);
-    va_end(args);
+    //va_list args;
+    //va_start(args, fmt);
+    //vfprintf(fd, fmt, args);
+    //va_end(args);
 }

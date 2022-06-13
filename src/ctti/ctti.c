@@ -91,7 +91,7 @@ struct ctti_output {
 #include "lexer.c"
 #include "parser.c"
 
-i32 main(i32 argc, u8 **argv) {
+int main(int argc, char **argv) {
     if (argc == 1) {
         die("Usage: ctti file.c [...]\n");
     }

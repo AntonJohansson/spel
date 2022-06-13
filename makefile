@@ -7,6 +7,8 @@ LOADER := $(BUILDDIR)/loader
 RENDERER := $(BUILDDIR)/librenderer
 GAME := $(BUILDDIR)/libgame
 DEBUG := $(BUILDDIR)/libdebug
+CLIENT := $(BUILDDIR)/client
+SERVER := $(BUILDDIR)/server
 
 SHADER_SRCS = $(RESDIR)/color.vert \
 	      $(RESDIR)/color.frag \
@@ -17,11 +19,11 @@ SHADER_SRCS = $(RESDIR)/color.vert \
 SHADER_SPVS = $(patsubst %, %.spv, $(SHADER_SRCS))
 
 LIB_FLAGS := -shared -fPIC
-COMMON_FLAGS := -I src/include -g -MMD
+COMMON_FLAGS := -I src/include -g
 include $(wildcard $(BUILDDIR)/*.d)
 
 .DEFAULT_GOAL := all
-all: $(BUILDDIR) $(CTTI) $(RENDERER) $(GAME) $(DEBUG) $(LOADER) $(SHADER_SPVS)
+all: $(BUILDDIR) $(CTTI) $(RENDERER) $(GAME) $(DEBUG) $(LOADER) $(SHADER_SPVS) $(CLIENT) $(SERVER)
 
 $(CTTI): src/ctti/ctti.c src/include/third_party/sds.c
 	$(CC) -o $@ $^ $(COMMON_FLAGS)
@@ -40,6 +42,12 @@ $(DEBUG): src/debug/debug.c src/include/third_party/sds.c src/include/third_part
 
 %.spv: %
 	$(GLSLC) -V -o $@ $^
+
+$(CLIENT): net/client.c src/include/third_party/sds.c src/include/third_party/sds.h src/loader/platform/unix.c net/draw.c
+	$(CC) -o $@ $^ $(COMMON_FLAGS) -lm -lraylib
+
+$(SERVER): net/server.c src/include/third_party/sds.c src/include/third_party/sds.h src/loader/platform/unix.c net/draw.c
+	$(CC) -o $@ $^ $(COMMON_FLAGS) -lm -lraylib
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR) && ln -sf $(RESDIR) $(BUILDDIR)

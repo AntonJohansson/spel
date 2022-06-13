@@ -1,6 +1,8 @@
 #include <shared/api.h>
 PlatformFunctionTable platform;
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
